@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APPUI Procesador v5 — Gobernación de La Guajira</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#21262d;--border:#30363d;--accent:#f0a500;--accent2:#e05c2a;--green:#3fb950;--red:#f85149;--blue:#58a6ff;--yellow:#e3b341;--text:#e6edf3;--muted:#8b949e;--mono:'DM Mono',monospace;--sans:'Syne',sans-serif;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;}
+.header{border-bottom:1px solid var(--border);padding:16px 40px;display:flex;align-items:center;gap:14px;background:var(--surface);position:sticky;top:0;z-index:100;}
+.header-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.header h1{font-size:16px;font-weight:700;}
+.header span{font-size:11px;color:var(--muted);font-family:var(--mono);}
+.badge{margin-left:auto;background:rgba(240,165,0,0.15);border:1px solid rgba(240,165,0,0.3);color:var(--accent);padding:3px 10px;border-radius:20px;font-size:10px;font-family:var(--mono);}
+.main{max-width:1140px;margin:0 auto;padding:32px 40px;}
+
+/* Steps */
+.steps{display:flex;margin-bottom:28px;border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.step{flex:1;padding:12px 16px;display:flex;align-items:center;gap:10px;border-right:1px solid var(--border);background:var(--surface);transition:background 0.2s;}
+.step:last-child{border-right:none;}
+.step.active{background:rgba(240,165,0,0.07);}
+.step.done{background:rgba(63,185,80,0.05);}
+.step-num{width:24px;height:24px;border-radius:50%;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--mono);flex-shrink:0;}
+.step.active .step-num{border-color:var(--accent);color:var(--accent);}
+.step.done .step-num{border-color:var(--green);color:var(--green);background:rgba(63,185,80,0.1);}
+.step-label{font-size:12px;font-weight:600;}
+.step-sub{font-size:10px;color:var(--muted);font-family:var(--mono);}
+
+/* Source cards */
+.source-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}
+.source-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;transition:border-color 0.2s;}
+.source-card.connected{border-color:var(--green);}
+.source-card.error-card{border-color:var(--red);}
+.source-header{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.source-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
+.source-icon.sheets{background:rgba(63,185,80,0.15);}
+.source-icon.api{background:rgba(88,166,255,0.15);}
+.source-title{font-size:13px;font-weight:600;}
+.source-sub{font-size:10px;color:var(--muted);font-family:var(--mono);}
+.source-status{margin-left:auto;font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:10px;}
+.source-status.ok{background:rgba(63,185,80,0.15);color:var(--green);}
+.source-status.err{background:rgba(248,81,73,0.15);color:var(--red);}
+.source-status.idle{background:var(--surface2);color:var(--muted);}
+
+/* Input row */
+.input-row{display:flex;gap:8px;align-items:stretch;}
+.input-row input{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-family:var(--mono);font-size:11px;}
+.input-row input:focus{outline:none;border-color:var(--accent);}
+.input-row input::placeholder{color:var(--muted);}
+.icon-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);padding:8px 14px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.15s;white-space:nowrap;}
+.icon-btn:hover{border-color:var(--accent);color:var(--accent);}
+.icon-btn.primary{background:rgba(240,165,0,0.12);border-color:rgba(240,165,0,0.35);color:var(--accent);}
+.source-hint{font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:6px;line-height:1.4;}
+.source-info{font-size:10px;font-family:var(--mono);margin-top:8px;padding:8px 10px;border-radius:6px;background:var(--surface2);}
+.source-info.ok{color:var(--green);}
+.source-info.err{color:var(--red);}
+
+/* Upload card para reporte anterior */
+.upload-card{border:1.5px dashed var(--border);border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--surface);position:relative;display:flex;align-items:center;gap:12px;}
+.upload-card:hover{border-color:var(--accent);background:rgba(240,165,0,0.04);}
+.upload-card.uploaded{border-style:solid;border-color:var(--green);background:rgba(63,185,80,0.04);}
+.upload-card.drag-over{border-color:var(--accent);transform:scale(1.01);}
+.opt-badge{background:rgba(88,166,255,0.15);color:var(--blue);font-size:8px;padding:2px 6px;border-radius:8px;font-family:var(--mono);white-space:nowrap;}
+input[type=file]{display:none;}
+
+/* Options */
+.options-row{display:flex;gap:12px;margin-bottom:16px;align-items:center;flex-wrap:wrap;}
+.opt-label{font-size:11px;color:var(--muted);font-family:var(--mono);}
+.toggle-group{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.toggle-btn{padding:7px 14px;background:var(--surface);border:none;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all 0.15s;border-right:1px solid var(--border);}
+.toggle-btn:last-child{border-right:none;}
+.toggle-btn.active{background:rgba(240,165,0,0.15);color:var(--accent);font-weight:500;}
+select{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:7px 11px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer;}
+
+/* Config */
+.config-panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:18px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+.config-item label{font-size:10px;color:var(--muted);font-family:var(--mono);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;}
+.config-item input[type=text]{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-family:var(--mono);font-size:11px;}
+.config-item input[type=text]:focus{outline:none;border-color:var(--accent);}
+.config-hint{font-size:9px;color:var(--muted);margin-top:4px;}
+
+/* Process btn */
+.process-btn{width:100%;padding:14px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#000;font-family:var(--sans);font-size:14px;font-weight:700;cursor:pointer;transition:all 0.2s;margin-bottom:24px;}
+.process-btn:hover:not(:disabled){opacity:0.9;transform:translateY(-1px);}
+.process-btn:disabled{opacity:0.35;cursor:not-allowed;}
+
+/* Progress */
+.progress-wrap{margin-bottom:24px;display:none;}
+.progress-label{font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:6px;}
+.progress-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width 0.4s;width:0%;}
+.log-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:var(--mono);font-size:10px;color:var(--muted);height:80px;overflow-y:auto;margin-top:7px;}
+.log-line{margin-bottom:2px;}.log-line.ok{color:var(--green);}.log-line.warn{color:var(--yellow);}.log-line.err{color:var(--red);}
+
+/* Results */
+.results{display:none;}
+.stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;}
+.stat-num{font-size:26px;font-weight:800;font-family:var(--mono);}
+.stat-label{font-size:10px;color:var(--muted);margin-top:3px;}
+.stat-card.green .stat-num{color:var(--green);}.stat-card.amber .stat-num{color:var(--accent);}.stat-card.blue .stat-num{color:var(--blue);}.stat-card.red .stat-num{color:var(--red);}.stat-card.yellow .stat-num{color:var(--yellow);}
+.section-title{font-size:10px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;margin-top:18px;}
+.sector-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px;}
+.sector-pill{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;}
+.sector-name{font-size:10px;color:var(--muted);font-family:var(--mono);}
+.sector-count{font-size:14px;font-weight:700;color:var(--accent);font-family:var(--mono);}
+.val-banner{padding:10px 16px;border-radius:8px;margin-bottom:14px;font-size:11px;font-family:var(--mono);display:none;line-height:1.6;}
+.val-banner.ok{background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.25);color:var(--green);}
+.val-banner.warn{background:rgba(227,179,65,0.1);border:1px solid rgba(227,179,65,0.25);color:var(--yellow);}
+.val-banner.err{background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.25);color:var(--red);}
+.download-row{display:flex;gap:10px;margin-bottom:20px;}
+.dl-btn{flex:1;padding:11px 12px;border-radius:9px;border:1px solid;font-family:var(--sans);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.15s;text-align:center;}
+.dl-btn.primary{background:rgba(240,165,0,0.12);border-color:rgba(240,165,0,0.35);color:var(--accent);}
+.dl-btn.primary:hover{background:rgba(240,165,0,0.22);}
+.dl-btn.secondary{background:rgba(63,185,80,0.08);border-color:rgba(63,185,80,0.3);color:var(--green);}
+.dl-btn.secondary:hover{background:rgba(63,185,80,0.16);}
+.dl-btn.tertiary{background:rgba(88,166,255,0.08);border-color:rgba(88,166,255,0.3);color:var(--blue);}
+.dl-btn.tertiary:hover{background:rgba(88,166,255,0.16);}
+.dl-btn.warn-btn{background:rgba(248,81,73,0.08);border-color:rgba(248,81,73,0.3);color:var(--red);}
+.dl-btn.warn-btn:hover{background:rgba(248,81,73,0.16);}
+.tabs{display:flex;margin-bottom:12px;border-bottom:1px solid var(--border);}
+.tab{padding:9px 18px;font-size:12px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;color:var(--muted);transition:all 0.15s;}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.preview-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.preview-header{padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;font-family:var(--mono);color:var(--muted);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.preview-header strong{color:var(--text);}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:10px;}
+.dot{width:8px;height:8px;border-radius:50%;}
+.table-controls{display:flex;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);}
+.table-search{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-family:var(--mono);font-size:11px;}
+.table-search:focus{outline:none;border-color:var(--accent);}
+.table-wrap{overflow-x:auto;max-height:420px;overflow-y:auto;}
+table{width:100%;border-collapse:collapse;font-size:10px;font-family:var(--mono);}
+th{background:var(--surface2);padding:7px 10px;text-align:left;color:var(--muted);font-weight:500;white-space:nowrap;position:sticky;top:0;border-bottom:1px solid var(--border);z-index:10;cursor:pointer;}
+th:hover{color:var(--text);}
+td{padding:6px 10px;border-bottom:1px solid rgba(48,54,61,0.4);white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis;}
+tr:hover td{background:rgba(255,255,255,0.02);}
+td.manual{color:var(--yellow);font-style:italic;}
+td.empty{color:var(--red);}
+td.ok{color:var(--text);}
+tr.nuevo-row td:first-child{border-left:2px solid var(--blue);}
+td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba(240,165,0,0.05);}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-icon">📋</div>
+  <div><h1>APPUI Procesador</h1><span>Gobernación de La Guajira — DIARI / Contraloría General</span></div>
+  <div class="badge">v5.0 · 2026</div>
+</div>
+
+<div class="main">
+
+  <div class="steps">
+    <div class="step active" id="step1"><div class="step-num">1</div><div><div class="step-label">Fuentes</div><div class="step-sub">Sheets + API</div></div></div>
+    <div class="step" id="step2"><div class="step-num">2</div><div><div class="step-label">Configurar</div><div class="step-sub">Opciones</div></div></div>
+    <div class="step" id="step3"><div class="step-num">3</div><div><div class="step-label">Procesar</div><div class="step-sub">Generar</div></div></div>
+    <div class="step" id="step4"><div class="step-num">4</div><div><div class="step-label">Revisar</div><div class="step-sub">Editar y descargar</div></div></div>
+  </div>
+
+  <!-- Source cards -->
+  <div class="source-grid">
+
+    <!-- Google Sheets -->
+    <div class="source-card" id="card-sheets">
+      <div class="source-header">
+        <div class="source-icon sheets">📗</div>
+        <div>
+          <div class="source-title">Requerimiento de Procesos</div>
+          <div class="source-sub">Google Sheets — hoja BASE DE # AUTO</div>
+        </div>
+        <div class="source-status idle" id="status-sheets">Sin conectar</div>
+      </div>
+      <div class="input-row">
+        <input type="text" id="sheets-url" placeholder="Pega el link de tu Google Sheet aquí..." oninput="guardarURL()">
+        <button class="icon-btn primary" onclick="conectarSheets()">Conectar →</button>
+      </div>
+      <div class="source-hint">
+        Antes de pegar el link: en tu Sheet ve a <strong>Archivo → Compartir → Publicar en la web</strong>,
+        selecciona la hoja <strong>BASE DE # AUTO</strong>, formato <strong>CSV</strong> y copia el link generado.
+        El link queda guardado automáticamente.
+      </div>
+      <div class="source-info" id="info-sheets" style="display:none"></div>
+    </div>
+
+    <!-- API Socrata -->
+    <div class="source-card" id="card-api">
+      <div class="source-header">
+        <div class="source-icon api">🌐</div>
+        <div>
+          <div class="source-title">Datos Abiertos SECOP II</div>
+          <div class="source-sub">API Socrata — datos.gov.co · filtro por NIT</div>
+        </div>
+        <div class="source-status idle" id="status-api">Sin verificar</div>
+      </div>
+      <div class="input-row">
+        <input type="text" id="api-nit" value="8921150151" placeholder="NIT de la entidad (sin dígito de verificación)">
+        <button class="icon-btn primary" onclick="verificarAPI()">Verificar →</button>
+      </div>
+      <div class="source-hint">
+        NIT de la Gobernación de La Guajira: <strong>8921150151</strong>. Más confiable que el nombre — nunca cambia. La app descarga todos los contratos usando la API pública de datos.gov.co.
+      </div>
+      <div class="source-info" id="info-api" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- Reporte anterior opcional -->
+  <label class="upload-card" id="card-prev" for="file-prev"
+    ondragover="dragOver(event)" ondragleave="dragLeave()" ondrop="dropFile(event)" style="margin-bottom:18px;cursor:pointer;">
+    <span class="opt-badge">OPCIONAL</span>
+    <div style="font-size:22px">📄</div>
+    <div>
+      <div style="font-size:12px;font-weight:600">Reporte Anterior APPUI</div>
+      <div style="font-size:10px;color:var(--muted);font-family:var(--mono)">Sube el .xlsx del mes anterior para detectar contratos nuevos — arrastra o haz clic</div>
+      <div style="font-size:10px;color:var(--green);font-family:var(--mono);margin-top:4px" id="name-prev"></div>
+    </div>
+    <input type="file" id="file-prev" accept=".xlsx" onchange="loadPrev(event)">
+  </label>
+
+  <!-- Opciones -->
+  <div class="options-row">
+    <span class="opt-label">Reporte:</span>
+    <div class="toggle-group">
+      <button class="toggle-btn active" id="btn-todos" onclick="setTipo('todos')">📋 Todos</button>
+      <button class="toggle-btn" id="btn-nuevos" onclick="setTipo('nuevos')">✨ Solo nuevos</button>
+      <button class="toggle-btn" id="btn-mes" onclick="setTipo('mes')">📅 Por mes</button>
+    </div>
+    <select id="sel-mes" style="display:none">
+      <option value="1">Enero</option><option value="2">Febrero</option><option value="3" selected>Marzo</option>
+      <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+      <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+      <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+    </select>
+    <select id="sel-anio" style="display:none">
+      <option value="2024">2024</option>
+      <option value="2025">2025</option>
+      <option value="2026" selected>2026</option>
+    </select>
+  </div>
+
+  <div class="config-panel">
+    <div class="config-item">
+      <label>Supervisores a excluir (Riesgo)</label>
+      <input type="text" id="cfg-supervisores" value="OROZCO,PANA">
+      <div class="config-hint">Palabras clave en nombre del supervisor</div>
+    </div>
+    <div class="config-item">
+      <label>Vigencia</label>
+      <input type="text" id="cfg-vigencia" value="2026">
+      <div class="config-hint">Año del reporte</div>
+    </div>
+    <div class="config-item">
+      <label>Nombre para el archivo</label>
+      <input type="text" id="cfg-entidad" value="GOBERNACION_GUAJIRA">
+      <div class="config-hint">Prefijo del CSV descargado</div>
+    </div>
+  </div>
+
+  <button class="process-btn" id="btn-process" onclick="procesar()" disabled>⚡ Generar reporte APPUI</button>
+
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-label" id="progress-label">Iniciando...</div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    <div class="log-box" id="log-box"></div>
+  </div>
+
+  <div class="results" id="results">
+    <div class="stats-row">
+      <div class="stat-card green"><div class="stat-num" id="stat-total">0</div><div class="stat-label">Total procesados</div></div>
+      <div class="stat-card blue"><div class="stat-num" id="stat-nuevos">0</div><div class="stat-label">Contratos nuevos</div></div>
+      <div class="stat-card yellow"><div class="stat-num" id="stat-manual">0</div><div class="stat-label">Incompletos</div></div>
+      <div class="stat-card red"><div class="stat-num" id="stat-vacios">0</div><div class="stat-label">Con vacíos</div></div>
+      <div class="stat-card amber"><div class="stat-num" id="stat-excluidos">0</div><div class="stat-label">Excluidos riesgo</div></div>
+    </div>
+    <div class="section-title">Distribución por sector</div>
+    <div class="sector-grid" id="sector-grid"></div>
+    <div class="val-banner" id="val-banner"></div>
+    <div class="download-row">
+      <button class="dl-btn primary" onclick="descargarCSV('completo')">⬇ CSV completo — subir a APPUI</button>
+      <button class="dl-btn secondary" onclick="descargarCSV('nuevos')">⬇ CSV solo nuevos</button>
+      <button class="dl-btn tertiary" onclick="descargarExcel()">⬇ Excel revisión (con colores)</button>
+      <button class="dl-btn warn-btn" onclick="descargarCSV('atencion')">⬇ CSV incompletos</button>
+    </div>
+    <div class="tabs">
+      <div class="tab active" id="tab-todos" onclick="switchTab('todos')">Todos <span id="cnt-todos" style="color:var(--muted);font-weight:400"></span></div>
+      <div class="tab" id="tab-nv" onclick="switchTab('nuevos')">Nuevos <span id="cnt-nv" style="color:var(--muted);font-weight:400"></span></div>
+      <div class="tab" id="tab-manual" onclick="switchTab('manual')">Requieren atención <span id="cnt-manual" style="color:var(--red);font-weight:400"></span></div>
+    </div>
+    <div class="preview-wrap">
+      <div class="preview-header">
+        <strong id="preview-count">0 registros</strong>
+        <div class="legend-item"><div class="dot" style="background:var(--yellow)"></div>Manual</div>
+        <div class="legend-item"><div class="dot" style="background:var(--red)"></div>Vacío</div>
+        <div class="legend-item"><div class="dot" style="background:var(--blue);opacity:0.6"></div>Nuevo</div>
+        <span style="margin-left:auto;font-size:9px;color:var(--muted)">Clic en celda amarilla/roja para editar</span>
+      </div>
+      <div class="table-controls">
+        <input class="table-search" id="table-search" placeholder="Buscar por nombre, NIT, ID contrato..." oninput="filtrarTabla()">
+      </div>
+      <div class="table-wrap"><table><thead id="preview-head"></thead><tbody id="preview-body"></tbody></table></div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ─── State ────────────────────────────────────────────────
+let sheetsData=null, apiData=null, prevData=null;
+let reporteCompleto=[],reporteNuevos=[],reporteAtencion=[];
+let tipoReporte='todos', tabActual='todos';
+
+// ─── Mappings ─────────────────────────────────────────────
+const MODALIDAD_MAP={'LICITACIÓN PÚBLICA':1,'LICITACION PUBLICA':1,'LICITACION':1,'CONCURSO DE MÉRITOS':2,'CONCURSO DE MERITOS':2,'CONCURSO':2,'SELECCIÓN ABREVIADA':3,'SELECCION ABREVIADA':3,'MENOR CUANTÍA':3,'MENOR CUANTIA':3,'MÍNIMA CUANTÍA':6,'MINIMA CUANTIA':6,'CONTRATACIÓN DIRECTA':7,'CONTRATACION DIRECTA':7,'DIRECTA':7,'CONTRATACIÓN PRIVADA':10,'CONTRATACION PRIVADA':10,'RÉGIMEN ESPECIAL':11,'REGIMEN ESPECIAL':11};
+const TIPO_DOC_MAP={'CÉDULA DE CIUDADANÍA':1,'CEDULA DE CIUDADANIA':1,'CÉDULA':1,'CEDULA':1,'CC':1,'TARJETA DE IDENTIDAD':2,'TI':2,'REGISTRO CIVIL':3,'CÉDULA DE EXTRANJERÍA':4,'CEDULA DE EXTRANJERIA':4,'CE':4,'NUIP':5,'PASAPORTE':6,'NIT':7,'CARNET DIPLOMÁTICO':8,'PERMISO ESPECIAL':9,'PEP':9,'PERMISO POR PROTECCIÓN TEMPORAL':9,'PPT':9,'PERMISO POR PROTECCION TEMPORAL':9,'TARJETA DE MOVILIDAD':12,'VISA':13,'PERMISO TEMPORAL':14,'PTP':14};
+const ESTADO_MAP={'EN EJECUCIÓN':1,'EN EJECUCION':1,'EJECUCION':1,'SUSPENDIDO':2,'LIQUIDADO':3,'ADJUDICADO':4,'APROBADO':4,'REASIGNACION':5,'CEDIDO':5,'FINALIZADO':6,'TERMINADO':6,'SUSCRITO':7,'MODIFICADO':7};
+const SECTOR_MAP={'VIVIENDA':1,'EDUCACION':2,'EDUCACIÓN':2,'SECRETARÍA EDUCACION':2,'SECRETARIA EDUCACION':2,'SALUD':3,'ESEPGUA':3,'INCLUSION SOCIAL':4,'ASUNTOS INDIGENAS':4,'INDIGENA':4,'DEPORTIVO':5,'DEPORTE':5,'AGUA POTABLE':6,'SANEAMIENTO':6,'JUSTICIA':7,'JURIDICA':7,'JURÍDICA':7,'CONTROL INTERNO':7,'CONTROL INTER ADMINISTRATIVO':7,'TRANSPORTE':8,'TRANSITO':8,'OBRAS PUBLICAS':8,'OBRAS PÚBLICAS':8,'MINAS':9,'ENERGIA':9,'DEFENSA':10,'GOBIERNO':10,'AGROPECUARIO':11,'DESARROLLO ECONOMICO':11,'TECNOLOGIA':12,'TECNOLOGÍA':12,'COMERCIO':13,'TURISMO':13,'HACIENDA':14,'PLANEACION':14,'CONTRATACION':14,'CONTRATACIÓN':14,'DESPACHO':14,'SECRETARÍA GENERAL':14,'SECRETARIA GENERAL':14,'SEC. GENERAL':14,'APOYO A LA GESTION':14,'APOYO GESTION':14,'SECRETARIA DE APOYO':14,'SEC. HACIENDA':14,'OBRAS':15,'INFRAESTRUCTURA':15,'CULTURA':16,'RIESGO':16,'GENERAL':16,'OTRO':16};
+const SECTOR_LABELS={'1':'Vivienda','2':'Educación','3':'Salud','4':'Inclusión Social','5':'Deportivo','6':'Agua Potable','7':'Justicia','8':'Transporte','9':'Minas/Energía','10':'Defensa','11':'Agropecuario','12':'Tecnología','13':'Comercio','14':'Gestión Pública','15':'Infraestructura','16':'Otro'};
+const COLS_PRIORITY=['idContrato','idContratoSecop','nombreContratista','identificacionContratista','sectorContrato','estadoContrato','modalidad','fechaInicioContrato','plazoContrato','valorTotalPropios','lineaProyecto','observaciones'];
+
+// ─── Persistencia del URL en localStorage ─────────────────
+window.onload = () => {
+  const saved = localStorage.getItem('appui_sheets_url');
+  if (saved) {
+    document.getElementById('sheets-url').value = saved;
+    conectarSheets(true);
+  }
+  // Cargar NIT guardado (o usar el de La Guajira por defecto)
+  const savedNit = localStorage.getItem('appui_nit_api');
+  if (savedNit) document.getElementById('api-nit').value = savedNit;
+};
+
+function guardarURL() {
+  const url = document.getElementById('sheets-url').value.trim();
+  if (url) localStorage.setItem('appui_sheets_url', url);
+}
+
+// ─── Google Sheets connector ──────────────────────────────
+async function conectarSheets(silencioso=false) {
+  const urlInput = document.getElementById('sheets-url').value.trim();
+  if (!urlInput) { alert('Pega el link de tu Google Sheet primero.'); return; }
+
+  const btn = document.querySelector('#card-sheets .icon-btn.primary');
+  btn.textContent = '⏳ Conectando...';
+  btn.disabled = true;
+
+  setSourceStatus('sheets', 'idle', 'Conectando...');
+  setSourceInfo('sheets', '');
+
+  try {
+    // Convertir link de Sheets a CSV si es necesario
+    const csvUrl = convertirACSV(urlInput);
+    const resp = await fetch(csvUrl);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} — Verifica que la hoja esté publicada como CSV`);
+    const text = await resp.text();
+    const rows = parseCSV(text);
+    if (rows.length < 2) throw new Error('La hoja parece estar vacía o no tiene datos');
+
+    sheetsData = rows;
+    localStorage.setItem('appui_sheets_url', urlInput);
+    setSourceStatus('sheets', 'ok', `✓ ${rows.length-1} filas`);
+    setSourceInfo('sheets', `✓ ${rows.length-1} registros cargados desde Google Sheets`, 'ok');
+    document.getElementById('card-sheets').classList.add('connected');
+    if (!silencioso) checkReady();
+  } catch(err) {
+    setSourceStatus('sheets', 'err', 'Error');
+    setSourceInfo('sheets', '✗ ' + err.message + '\n\nVerifica: Archivo → Publicar en la web → BASE DE # AUTO → CSV', 'err');
+    document.getElementById('card-sheets').classList.add('error-card');
+  }
+  btn.textContent = 'Conectar →'; btn.disabled = false;
+  checkReady();
+}
+
+function convertirACSV(url) {
+  // Si ya es un link de "publicar en la web" CSV, usarlo directo
+  if (url.includes('output=csv') || url.includes('format=csv')) return url;
+  // Si es un link normal de Sheets, convertir a export CSV
+  // Formato: https://docs.google.com/spreadsheets/d/ID/edit...
+  const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (match) {
+    const id = match[1];
+    // Intentar con gid si lo hay
+    const gidMatch = url.match(/gid=(\d+)/);
+    const gid = gidMatch ? gidMatch[1] : '0';
+    return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
+  }
+  // Si es link de "publicar en la web" con pub?
+  return url;
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g,'').trim());
+  return [headers, ...lines.slice(1).map(line => {
+    // Parseo básico de CSV respetando comillas
+    const vals = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
+      else cur += c;
+    }
+    vals.push(cur.trim());
+    return vals;
+  })];
+}
+
+function sheetsToObjects(rows) {
+  const [headers, ...data] = rows;
+  return data.map(row => {
+    const obj = {};
+    headers.forEach((h,i) => { obj[h] = row[i] || ''; });
+    return obj;
+  });
+}
+
+// ─── API Socrata ──────────────────────────────────────────
+async function verificarAPI() {
+  const nit = document.getElementById('api-nit').value.trim().replace(/[^0-9]/g,'');
+  if (!nit) { alert('Escribe el NIT de la entidad.'); return; }
+  localStorage.setItem('appui_nit_api', nit);
+
+  const btn = document.querySelector('#card-api .icon-btn.primary');
+  btn.textContent = '⏳ Verificando...'; btn.disabled = true;
+  setSourceStatus('api', 'idle', 'Verificando...');
+
+  try {
+    // Usar Nit Entidad como filtro — más confiable que el nombre
+    const url = `https://www.datos.gov.co/resource/jbjy-vk9h.json?$where=nit_entidad='${nit}'&$limit=3&$select=nombre_entidad,nit_entidad,id_contrato`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (data.length === 0) throw new Error(`No se encontraron contratos para NIT "${nit}". Verifica el NIT.`);
+
+    const nombreEntidad = data[0]['nombre_entidad'] || data[0]['Nombre Entidad'] || 'Entidad encontrada';
+    setSourceStatus('api', 'ok', '✓ Activa');
+    setSourceInfo('api', `✓ Entidad: ${nombreEntidad} · NIT: ${nit}`, 'ok');
+    document.getElementById('card-api').classList.add('connected');
+    document.getElementById('card-api').classList.remove('error-card');
+  } catch(err) {
+    setSourceStatus('api', 'err', 'Error');
+    setSourceInfo('api', '✗ ' + err.message, 'err');
+    document.getElementById('card-api').classList.add('error-card');
+    document.getElementById('card-api').classList.remove('connected');
+  }
+  btn.textContent = 'Verificar →'; btn.disabled = false;
+  checkReady();
+}
+
+async function cargarDatosAPI(nit, onProgress) {
+  const LIMIT = 1000;
+  let offset = 0, todos = [];
+  while (true) {
+    onProgress(`Descargando contratos desde API... (${todos.length} descargados)`);
+    // Filtrar por nit_entidad — campo snake_case en la API Socrata
+    const url = `https://www.datos.gov.co/resource/jbjy-vk9h.json?$where=nit_entidad='${nit}'&$limit=${LIMIT}&$offset=${offset}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Error API: HTTP ${resp.status}`);
+    const batch = await resp.json();
+    todos = todos.concat(batch);
+    if (batch.length < LIMIT) break;
+    offset += LIMIT;
+  }
+  return todos;
+}
+
+// ─── Helpers UI ───────────────────────────────────────────
+function setSourceStatus(id, type, text) {
+  const el = document.getElementById('status-'+id);
+  el.className = 'source-status ' + type;
+  el.textContent = text;
+}
+function setSourceInfo(id, text, type='') {
+  const el = document.getElementById('info-'+id);
+  el.style.display = text ? 'block' : 'none';
+  el.className = 'source-info' + (type ? ' '+type : '');
+  el.textContent = text;
+}
+function checkReady() {
+  const ok = sheetsData && document.getElementById('status-api').classList.contains('ok');
+  document.getElementById('btn-process').disabled = !ok;
+  if (sheetsData) document.getElementById('step2').classList.add('active');
+}
+
+// ─── Reporte anterior ─────────────────────────────────────
+function dragOver(e){e.preventDefault();document.getElementById('card-prev').classList.add('drag-over');}
+function dragLeave(){document.getElementById('card-prev').classList.remove('drag-over');}
+function dropFile(e){e.preventDefault();dragLeave();const f=e.dataTransfer.files[0];if(f)procesarPrev(f);}
+function loadPrev(e){const f=e.target.files[0];if(f)procesarPrev(f);}
+function procesarPrev(f){
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'binary'});
+      const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+      prevData={data};
+      document.getElementById('card-prev').classList.add('uploaded');
+      document.getElementById('name-prev').textContent=`✓ ${f.name} · ${data.length} registros`;
+    }catch(err){alert('Error al leer el archivo: '+err.message);}
+  };
+  reader.readAsBinaryString(f);
+}
+
+function setTipo(t){
+  tipoReporte=t;
+  document.querySelectorAll('.toggle-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('btn-'+t).classList.add('active');
+  const esMes=t==='mes';
+  document.getElementById('sel-mes').style.display=esMes?'block':'none';
+  document.getElementById('sel-anio').style.display=esMes?'block':'none';
+}
+function mapear(val,mapa){if(!val)return'';const k=String(val).trim().toUpperCase();if(mapa[k]!==undefined)return String(mapa[k]);for(const[key,v]of Object.entries(mapa)){if(k.includes(key))return String(v);}return'';}
+function normFecha(val){
+  if(val===null||val===undefined)return'';
+  if(val instanceof Date){
+    if(isNaN(val.getTime()))return'';
+    return`${val.getFullYear()}-${String(val.getMonth()+1).padStart(2,'0')}-${String(val.getDate()).padStart(2,'0')}`;
+  }
+  const s=String(val).trim();
+  if(!s||s==='nan'||s==='NaN'||s==='undefined')return'';
+  // ISO con hora: 2026-01-26T00:00:00.000 (formato API Socrata)
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})T/);if(m)return`${m[1]}-${m[2]}-${m[3]}`;
+  // YYYY-MM-DD
+  m=s.match(/^(\d{4}-\d{2}-\d{2})$/);if(m)return m[1];
+  // MM/DD/YYYY o M/D/YYYY (formato Excel datos.gov.co)
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(m)return`${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+  // YYYY/MM/DD
+  m=s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);if(m)return`${m[1]}-${m[2]}-${m[3]}`;
+  return'';
+}
+function plazoADias(val){if(!val)return'0';const s=String(val).trim();let m=s.match(/(\d+)\s*[Mm]es/i);if(m)return String(parseInt(m[1])*30);m=s.match(/(\d+)\s*[Dd]ia/i);if(m)return m[1];if(/^\d+$/.test(s))return s;return'0';}
+function clean(v){const s=String(v||'').trim();return(s==='nan'||s==='NaN'||s==='undefined')?'':s;}
+function log(msg,tipo=''){const box=document.getElementById('log-box');const line=document.createElement('div');line.className='log-line '+tipo;line.textContent='› '+msg;box.appendChild(line);box.scrollTop=box.scrollHeight;}
+function setProgress(pct,label){document.getElementById('progress-fill').style.width=pct+'%';document.getElementById('progress-label').textContent=label;}
+async function tick(){await new Promise(r=>setTimeout(r,15));}
+
+// ─── Main processing ──────────────────────────────────────
+async function procesar() {
+  document.getElementById('progress-wrap').style.display='block';
+  document.getElementById('results').style.display='none';
+  document.getElementById('btn-process').disabled=true;
+  document.getElementById('log-box').innerHTML='';
+  document.getElementById('step3').classList.add('active');
+  await tick();
+
+  const supExcluir=document.getElementById('cfg-supervisores').value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+  const nit = document.getElementById('api-nit').value.trim().replace(/[^0-9]/g,'');
+
+  // ── 1. Cargar DA desde API ──
+  setProgress(5,'Descargando Datos Abiertos desde API...');
+  log('Conectando con API de datos.gov.co...','ok');
+  let daRows=[];
+  try {
+    daRows = await cargarDatosAPI(nit, msg => log(msg,'ok'));
+    log(`✓ ${daRows.length} contratos descargados de SECOP II`,'ok');
+  } catch(err) {
+    log('✗ Error descargando DA: '+err.message,'err');
+    document.getElementById('btn-process').disabled=false;
+    return;
+  }
+
+  // ── 2. Indexar Requerimiento desde Sheets ──
+  setProgress(35,'Procesando Requerimiento desde Sheets...');
+  await tick();
+  const reqObjs = sheetsToObjects(sheetsData);
+  const reqNit={}, reqSecop={}, secopRiesgo=new Set();
+  for(const row of reqObjs){
+    const nit=clean(row['IDENTIFICACION']).toUpperCase();
+    const secop=clean(row['ID DEL CONTRATO SECOP']).toUpperCase();
+    const sup=clean(row['SUPERVISOR(A)']).toUpperCase();
+    const esRiesgo=supExcluir.some(kw=>sup.includes(kw));
+    if(esRiesgo){if(secop)secopRiesgo.add(secop);}
+    else{if(nit&&!reqNit[nit])reqNit[nit]=row;if(secop&&!reqSecop[secop])reqSecop[secop]=row;}
+  }
+  log(`Requerimiento: ${reqObjs.length} registros · ${secopRiesgo.size} de riesgo excluidos`,'ok');
+
+  // ── 3. IDs previos ──
+  const idsPrev=new Set();
+  if(prevData){
+    for(const row of prevData.data){
+      ['idContratoSecop','id_contrato','ID Contrato'].forEach(k=>{
+        const id=clean(row[k]).toUpperCase();if(id)idsPrev.add(id);
+      });
+    }
+    log(`Reporte anterior: ${idsPrev.size} IDs previos`,'ok');
+  }
+
+  // ── 4. Filtrar y procesar ──
+  setProgress(45,'Procesando contratos...');
+  await tick();
+
+  // La API Socrata devuelve los campos en snake_case
+  // nit_entidad, id_contrato, nombre_entidad, proveedor_adjudicado, etc.
+  // Hacer helper que busca tanto snake_case como el nombre original del Excel
+  const mesFiltro=tipoReporte==='mes'?parseInt(document.getElementById('sel-mes').value):null;
+  const anioFiltro=tipoReporte==='mes'?parseInt(document.getElementById('sel-anio').value):null;
+  let excluidos=0;
+  const daFiltrado=daRows.filter(row=>{
+    const secop=clean(row['id_contrato']||row['ID Contrato']||'').toUpperCase();
+    if(secopRiesgo.has(secop)){excluidos++;return false;}
+    if(mesFiltro){
+      // La API Socrata devuelve: fecha_de_inicio_del_contrato en ISO "2026-01-26T00:00:00.000"
+      const fi=normFecha(row['fecha_de_inicio_del_contrato']||row['Fecha de Inicio del Contrato']||'');
+      if(!fi)return false;
+      const partes=fi.split('-'); // [YYYY, MM, DD]
+      return parseInt(partes[1])===mesFiltro && parseInt(partes[0])===anioFiltro;
+    }
+    return true;
+  });
+  if(mesFiltro) log(`Filtro: ${mesFiltro}/${anioFiltro} → ${daFiltrado.length} contratos`,'ok');
+  log(`DA filtrado: ${daFiltrado.length} contratos (${excluidos} excluidos)`,'ok');
+
+  const resultado=[];
+  const sectorCount={};
+  let filasManual=0,filasVacias=0;
+
+  for(let i=0;i<daFiltrado.length;i++){
+    if(i%80===0){setProgress(45+Math.floor((i/daFiltrado.length)*50),`Procesando ${i+1} de ${daFiltrado.length}...`);await tick();}
+
+    const row=daFiltrado[i];
+    // La API usa snake_case — hacer helper que busque ambas variantes
+    const d=col=>{
+      const snk=col.toLowerCase().replace(/ /g,'_').replace(/[()]/g,'').replace(/ó/g,'o').replace(/é/g,'e').replace(/ú/g,'u').replace(/á/g,'a').replace(/í/g,'i').replace(/ñ/g,'n');
+      return clean(row[col]||row[snk]||'');
+    };
+
+    const nit=d('Documento Proveedor')||clean(row['documento_proveedor']||row['nit_del_proveedor']||'');
+    const secop=d('ID Contrato')||clean(row['id_contrato']||'');
+    const nitUp=nit.toUpperCase(), secopUp=secop.toUpperCase();
+    const req=reqNit[nitUp]||reqSecop[secopUp]||{};
+    const esNuevo=idsPrev.size>0&&!idsPrev.has(secopUp);
+    const r=col=>clean(req[col]||'');
+
+    // Helpers para campos comunes de la API
+    const getDA=(normal,api)=>clean(row[normal]||row[api]||'');
+    const tipoDoc=getDA('TipoDocProveedor','tipo_de_documento_proveedor');
+    const nombreC=getDA('Proveedor Adjudicado','proveedor_adjudicado');
+    const tipoContrato=getDA('Tipo de Contrato','tipo_de_contrato');
+    const modalidad=getDA('Modalidad de Contratacion','modalidad_de_contratacion');
+    const fechaFirma=normFecha(row['Fecha de Firma']||row['fecha_de_firma']||'');
+    const objeto=getDA('Objeto del Contrato','objeto_del_contrato');
+    const fechaInicio=normFecha(row['Fecha de Inicio del Contrato']||row['fecha_de_inicio_del_contrato']||'');
+    const duracion=getDA('Duración del contrato','duraci_n_del_contrato');
+    const fechaFin=row['Fecha de Fin del Contrato']||row['fecha_de_fin_del_contrato']||'';
+    const fechaLiq=row['Fecha Fin Liquidacion']||row['fecha_fin_liquidacion']||'';
+    const estadoC=getDA('Estado Contrato','estado_contrato');
+    const sgp=getDA('Sistema General de Participaciones','sistema_general_de_participaciones');
+    const sgr=getDA('Sistema General de Regalías','sistema_general_de_regal_as');
+    const propios=getDA('Recursos Propios (Alcaldías, Gobernaciones y Resguardos Indígenas)','recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas');
+    const pgn=getDA('Presupuesto General de la Nacion – PGN','presupuesto_general_de_la_nacion_pgn');
+    const credito=getDA('Recursos de Credito','recursos_de_credito');
+    const anticipo=parseFloat((getDA('Valor de pago adelantado','valor_de_pago_adelantado')||'0').replace(/[^0-9.]/g,''))>0;
+    const amortizado=getDA('Valor Amortizado','valor_amortizado');
+    const diasAd=getDA('Dias adicionados','dias_adicionados');
+
+    let ft=normFecha(fechaFin);if(!ft)ft='1900-01-01';
+    let fl=normFecha(fechaLiq);if(!fl)fl='1800-01-01';
+    const sectorial=r('SECTORIAL').toUpperCase();
+    const sectorNum=mapear(sectorial,SECTOR_MAP)||'';
+    if(sectorNum)sectorCount[sectorNum]=(sectorCount[sectorNum]||0)+1;
+
+    const fila={
+      idContrato:d('Referencia del Contrato')||d('ID Contrato'),
+      lineaProyecto:'',
+      publicaSecop:'SI',
+      idContratoSecop:secop,
+      tipoContrato,
+      modalidad:mapear(modalidad,MODALIDAD_MAP)||'13',
+      interventoria:'0',
+      esConvenioInterAdministrativo:tipoContrato.toUpperCase().includes('CONVENIO')?'SI':'NO',
+      numeroContratoInternoConvenio:r('N° PROCESO DE CONTRATACIÓN'),
+      ordenEntidadContratista:'4',
+      proyectos:r('NUMERO CODIGO BPIN')||'0',
+      sectorContrato:sectorNum,
+      tipoIdentificacionContratista:mapear(tipoDoc,TIPO_DOC_MAP)||'1',
+      identificacionContratista:nit,
+      nombreContratista:nombreC,
+      anticipoContrato:anticipo?'SI':'NO',
+      valorPagadoAnticipo:amortizado||'0',
+      fechaPagoAnticipo:anticipo?fechaInicio:'',
+      fechaFirmaContrato:fechaFirma,
+      objetoContrato:objeto,
+      fechaInicioContrato:fechaInicio,
+      plazoContrato:plazoADias(duracion),
+      numeroAdiciones:r('ADICION VALOR')||'0',
+      valorTotalAdiciones:diasAd||'0',
+      numeroProrrogas:r('PRORROGA')||'0',
+      tiempoProrrogas:r('TIEMPO DE EJECUCION TOTAL')||'0',
+      numeroSuspenciones:'0',
+      tiempoSuspenciones:'0',
+      fechaTerminaContrato:ft,
+      fechaActaLiquidacion:fl,
+      estadoContrato:mapear(estadoC,ESTADO_MAP)||'1',
+      compromisos:r('No CDP')||'0',
+      valorTotalSGP:d('Sistema General de Participaciones')||'0',
+      valorTotalSGR:d('Sistema General de Regalías')||'0',
+      valorTotalPropios:d('Recursos Propios (Alcaldías, Gobernaciones y Resguardos Indígenas)')||'0',
+      valorTotalPgn:d('Presupuesto General de la Nacion – PGN')||'0',
+      valorTotalOtros:d('Recursos de Credito')||'0',
+      nroPoliza:r('NUMERO DE POLIZAS')||'N/A',
+      observaciones:'',
+    };
+    fila._esNuevo=esNuevo;
+    fila._requiereAtencion=!fila.sectorContrato||!fila.idContrato||!fila.fechaInicioContrato;
+    if(!fila.sectorContrato||!fila.idContrato)filasManual++;
+    const tieneVacio=Object.entries(fila).filter(([k])=>!k.startsWith('_')).some(([k,v])=>!v&&k!=='lineaProyecto'&&k!=='observaciones'&&k!=='fechaPagoAnticipo');
+    if(tieneVacio)filasVacias++;
+    resultado.push(fila);
+  }
+
+  reporteCompleto=resultado;
+  reporteNuevos=resultado.filter(r=>r._esNuevo);
+  reporteAtencion=resultado.filter(r=>r._requiereAtencion);
+
+  setProgress(98,'Validando...');await tick();
+  mostrarValidacion(validarCSV(resultado));
+  document.getElementById('stat-total').textContent=resultado.length;
+  document.getElementById('stat-nuevos').textContent=reporteNuevos.length;
+  document.getElementById('stat-manual').textContent=filasManual;
+  document.getElementById('stat-vacios').textContent=filasVacias;
+  document.getElementById('stat-excluidos').textContent=excluidos;
+  renderSectorGrid(sectorCount);
+  document.getElementById('cnt-todos').textContent=`(${resultado.length})`;
+  document.getElementById('cnt-nv').textContent=`(${reporteNuevos.length})`;
+  document.getElementById('cnt-manual').textContent=`(${reporteAtencion.length})`;
+  setProgress(100,'✓ Completado');
+  log(`✓ ${resultado.length} contratos procesados`,'ok');
+  log(`✓ ${reporteNuevos.length} contratos nuevos`,'ok');
+  if(filasManual>0)log(`⚠ ${filasManual} filas necesitan sector o número de contrato`,'warn');
+  document.getElementById('step4').classList.add('active');
+  document.getElementById('results').style.display='block';
+  document.getElementById('btn-process').disabled=false;
+  renderTabla(tipoReporte==='nuevos'?reporteNuevos:resultado);
+  document.getElementById('results').scrollIntoView({behavior:'smooth'});
+}
+
+function validarCSV(data){
+  const err=[];
+  const obl=['idContratoSecop','tipoContrato','modalidad','identificacionContratista','nombreContratista','fechaFirmaContrato','estadoContrato'];
+  data.forEach((f,i)=>{
+    for(const c of obl){if(!f[c])err.push(`Fila ${i+1}: ${c} vacío`);}
+    ['objetoContrato','nombreContratista'].forEach(c=>{if(f[c]&&String(f[c]).includes('|'))err.push(`Fila ${i+1}: ${c} tiene "|"`);});
+  });
+  return err;
+}
+function mostrarValidacion(errores){
+  const b=document.getElementById('val-banner');
+  b.style.display='block';
+  if(errores.length===0){b.className='val-banner ok';b.textContent='✓ Sin errores críticos — CSV listo para subir a APPUI.';}
+  else if(errores.length<15){b.className='val-banner warn';b.innerHTML=`⚠ ${errores.length} advertencias:<br>`+errores.slice(0,6).join('<br>')+(errores.length>6?`<br>...y ${errores.length-6} más`:'');}
+  else{b.className='val-banner err';b.textContent=`✗ ${errores.length} campos obligatorios vacíos. Revisa "Requieren atención" antes de subir a APPUI.`;}
+}
+function renderSectorGrid(counts){
+  const g=document.getElementById('sector-grid');
+  const s=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  g.innerHTML=s.map(([k,v])=>`<div class="sector-pill"><span class="sector-name">${SECTOR_LABELS[k]||'Sector '+k}</span><span class="sector-count">${v}</span></div>`).join('');
+  if(!s.length)g.innerHTML='<div style="color:var(--muted);font-size:11px;font-family:var(--mono);grid-column:1/-1;padding:8px">Sin sectores detectados.</div>';
+}
+function switchTab(t){
+  tabActual=t;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.getElementById('tab-'+t).classList.add('active');
+  document.getElementById('table-search').value='';
+  renderTabla(t==='todos'?reporteCompleto:t==='nuevos'?reporteNuevos:reporteAtencion);
+}
+function filtrarTabla(){
+  const q=document.getElementById('table-search').value.toLowerCase();
+  const base=tabActual==='todos'?reporteCompleto:tabActual==='nuevos'?reporteNuevos:reporteAtencion;
+  renderTabla(q?base.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().includes(q))):base,!!q);
+}
+let sortCol=null,sortAsc=true;
+function sortBy(col){
+  if(sortCol===col)sortAsc=!sortAsc;else{sortCol=col;sortAsc=true;}
+  const base=tabActual==='todos'?reporteCompleto:tabActual==='nuevos'?reporteNuevos:reporteAtencion;
+  renderTabla([...base].sort((a,b)=>{const va=String(a[col]||''),vb=String(b[col]||'');return sortAsc?va.localeCompare(vb):vb.localeCompare(va);}),true);
+}
+function renderTabla(data,filtered=false){
+  if(!data||data.length===0){
+    document.getElementById('preview-body').innerHTML='<tr><td colspan="20" style="text-align:center;padding:20px;color:var(--muted);font-family:var(--mono);font-size:11px">Sin datos</td></tr>';
+    document.getElementById('preview-count').textContent='0 registros';return;
+  }
+  const allCols=Object.keys(data[0]).filter(k=>!k.startsWith('_'));
+  const cols=[...COLS_PRIORITY.filter(c=>allCols.includes(c)),...allCols.filter(c=>!COLS_PRIORITY.includes(c))];
+  document.getElementById('preview-head').innerHTML='<tr>'+cols.map(c=>`<th onclick="sortBy('${c}')">${c}${sortCol===c?(sortAsc?' ↑':' ↓'):''}</th>`).join('')+'</tr>';
+  document.getElementById('preview-body').innerHTML=data.slice(0,300).map((row,ri)=>
+    `<tr class="${row._esNuevo?'nuevo-row':''}">`+cols.map(col=>{
+      const v=row[col];
+      const isManual=col==='lineaProyecto'||col==='observaciones';
+      const isEmpty=!v&&col!=='lineaProyecto'&&col!=='observaciones'&&col!=='fechaPagoAnticipo';
+      const cls=isEmpty?'empty':isManual?'manual':'ok';
+      const display=isManual?'AGREGAR MANUALMENTE':(v||'—');
+      const ed=(isManual||isEmpty)?'contenteditable="true"':'';
+      return`<td class="${cls}" title="${String(v||'')}" ${ed} onblur="editarCelda(this,${ri},'${col}')">${display}</td>`;
+    }).join('')+'</tr>'
+  ).join('');
+  document.getElementById('preview-count').textContent=`${data.length} registros${data.length>300?' (mostrando 300)':''}${filtered?' — filtrados':''}`;
+}
+function editarCelda(el,ri,col){
+  const val=el.textContent.trim();
+  if(val==='AGREGAR MANUALMENTE'||val==='—')return;
+  const base=tabActual==='todos'?reporteCompleto:tabActual==='nuevos'?reporteNuevos:reporteAtencion;
+  if(base[ri]){base[ri][col]=val;el.className=val?'ok':'empty';el.removeAttribute('contenteditable');}
+}
+function limpiarParaCSV(fila){
+  const out={};
+  for(const[k,v]of Object.entries(fila)){
+    if(k.startsWith('_'))continue;
+    let val=String(v||'').replace(/\|/g,'').replace(/\n|\r/g,' ').trim();
+    if(k==='lineaProyecto'||k==='observaciones')val=val==='AGREGAR MANUALMENTE'?'':val;
+    out[k]=val;
+  }
+  return out;
+}
+function descargarCSV(tipo){
+  const data=tipo==='completo'?reporteCompleto:tipo==='nuevos'?reporteNuevos:reporteAtencion;
+  if(!data||!data.length){alert('No hay datos.');return;}
+  const cols=Object.keys(data[0]).filter(k=>!k.startsWith('_'));
+  const csv=[cols.join('|'),...data.map(f=>{const l=limpiarParaCSV(f);return cols.map(c=>l[c]||'').join('|');})].join('\n');
+  const entidad=document.getElementById('cfg-entidad').value||'CONTRATACION';
+  const fecha=new Date().toISOString().slice(0,10).replace(/-/g,'');
+  const suf=tipo==='nuevos'?'_NUEVOS':tipo==='atencion'?'_ATENCION':'';
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/plain;charset=utf-8'}));
+  a.download=`${entidad}${suf}_${fecha}.csv`;a.click();
+}
+function descargarExcel(){
+  if(!reporteCompleto.length){alert('Primero genera el reporte.');return;}
+  const wb=XLSX.utils.book_new();
+  [[reporteCompleto,'APPUI Completo'],[reporteNuevos,'Nuevos'],[reporteAtencion,'Requieren Atención']].forEach(([data,nombre])=>{
+    if(!data.length)return;
+    const ws=XLSX.utils.json_to_sheet(data.map(limpiarParaCSV));
+    const cols=Object.keys(data[0]).filter(k=>!k.startsWith('_'));
+    ws['!cols']=cols.map(c=>({wch:c==='objetoContrato'||c==='nombreContratista'?40:16}));
+    XLSX.utils.book_append_sheet(wb,ws,nombre);
+  });
+  const ws4=XLSX.utils.json_to_sheet([{campo:'Total',valor:reporteCompleto.length},{campo:'Nuevos',valor:reporteNuevos.length},{campo:'Atención',valor:reporteAtencion.length},{campo:'Fecha',valor:new Date().toLocaleDateString('es-CO')}]);
+  XLSX.utils.book_append_sheet(wb,ws4,'Resumen');
+  const entidad=document.getElementById('cfg-entidad').value||'CONTRATACION';
+  XLSX.writeFile(wb,`${entidad}_APPUI_REVISION_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`);
+}
+</script>
+</body>
+</html>
