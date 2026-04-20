@@ -152,7 +152,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
 <div class="header">
   <div class="header-icon">📋</div>
   <div><h1>APPUI Procesador</h1><span>Gobernación de La Guajira — DIARI / Contraloría General</span></div>
-  <div class="badge">v5.2 · 2026</div>
+  <div class="badge">v5.3 · 2026</div>
 </div>
 
 <div class="main">
@@ -455,13 +455,16 @@ async function verificarAPI() {
   checkReady();
 }
 
-async function cargarDatosAPI(nit, onProgress) {
+async function cargarDatosAPI(nit, anio, onProgress) {
   const LIMIT = 1000;
   let offset = 0, todos = [];
+  // Filtrar por NIT y por año de firma para no descargar histórico completo
+  const fechaDesde = `${anio}-01-01T00:00:00.000`;
+  const fechaHasta = `${anio}-12-31T23:59:59.999`;
   while (true) {
     onProgress(`Descargando contratos desde API... (${todos.length} descargados)`);
-    // Filtrar por nit_entidad — campo snake_case en la API Socrata
-    const url = `https://www.datos.gov.co/resource/jbjy-vk9h.json?$where=nit_entidad='${nit}'&$limit=${LIMIT}&$offset=${offset}`;
+    const where = `nit_entidad='${nit}' AND fecha_de_firma>='${fechaDesde}' AND fecha_de_firma<='${fechaHasta}'`;
+    const url = `https://www.datos.gov.co/resource/jbjy-vk9h.json?$where=${encodeURIComponent(where)}&$limit=${LIMIT}&$offset=${offset}`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`Error API: HTTP ${resp.status}`);
     const batch = await resp.json();
@@ -577,7 +580,7 @@ async function procesar() {
   log('Conectando con API de datos.gov.co...','ok');
   let daRows=[];
   try {
-    daRows = await cargarDatosAPI(nit, msg => log(msg,'ok'));
+    daRows = await cargarDatosAPI(nit, document.getElementById('cfg-vigencia').value||'2026', msg => log(msg,'ok'));
     log(`✓ ${daRows.length} contratos descargados de SECOP II`,'ok');
   } catch(err) {
     log('✗ Error descargando DA: '+err.message,'err');
@@ -681,6 +684,8 @@ async function procesar() {
 
     // Debug recursos en primera fila
     if(i===0) log(`Muestra recursos fila 1 — SGP:${sgp||'0'} Propios:${propios||'0'} PGN:${pgn||'0'}`,'warn');
+
+    let ft=normFecha(fechaFin);if(!ft)ft='1900-01-01';
     let fl=normFecha(fechaLiq);if(!fl)fl='1800-01-01';
     const sectorial=r('SECTORIAL').toUpperCase();
     const sectorNum=mapear(sectorial,SECTOR_MAP)||'';
