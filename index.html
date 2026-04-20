@@ -121,7 +121,7 @@ select{background:var(--surface);border:1px solid var(--border);color:var(--text
 .dl-btn.warn-btn{background:rgba(248,81,73,0.08);border-color:rgba(248,81,73,0.3);color:var(--red);}
 .dl-btn.warn-btn:hover{background:rgba(248,81,73,0.16);}
 .tabs{display:flex;margin-bottom:12px;border-bottom:1px solid var(--border);}
-.tab{padding:9px 18px;font-size:12px;font-weight:600;cursor:pointer;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);transition:all 0.15s;}
+.tab{padding:9px 18px;font-size:12px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;color:var(--muted);transition:all 0.15s;}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
 .preview-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
 .preview-header{padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;font-family:var(--mono);color:var(--muted);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
@@ -152,7 +152,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
 <div class="header">
   <div class="header-icon">📋</div>
   <div><h1>APPUI Procesador</h1><span>Gobernación de La Guajira — DIARI / Contraloría General</span></div>
-  <div class="badge">v5.0 · 2026</div>
+  <div class="badge">v5.2 · 2026</div>
 </div>
 
 <div class="main">
@@ -178,8 +178,8 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
         <div class="source-status idle" id="status-sheets">Sin conectar</div>
       </div>
       <div class="input-row">
-        <input type="text" id="sheets-url" placeholder="Pega el link de tu Google Sheet aquí...">
-        <button class="icon-btn primary" id="btn-conectar-sheets">Conectar →</button>
+        <input type="text" id="sheets-url" placeholder="Pega el link de tu Google Sheet aquí..." oninput="guardarURL()">
+        <button class="icon-btn primary" onclick="conectarSheets()">Conectar →</button>
       </div>
       <div class="source-hint">
         Antes de pegar el link: en tu Sheet ve a <strong>Archivo → Compartir → Publicar en la web</strong>,
@@ -201,7 +201,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
       </div>
       <div class="input-row">
         <input type="text" id="api-nit" value="8921150151" placeholder="NIT de la entidad (sin dígito de verificación)">
-        <button class="icon-btn primary" id="btn-verificar-api">Verificar →</button>
+        <button class="icon-btn primary" onclick="verificarAPI()">Verificar →</button>
       </div>
       <div class="source-hint">
         NIT de la Gobernación de La Guajira: <strong>8921150151</strong>. Más confiable que el nombre — nunca cambia. La app descarga todos los contratos usando la API pública de datos.gov.co.
@@ -211,7 +211,8 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
   </div>
 
   <!-- Reporte anterior opcional -->
-  <label class="upload-card" id="card-prev" for="file-prev" style="margin-bottom:18px;cursor:pointer;">
+  <label class="upload-card" id="card-prev" for="file-prev"
+    ondragover="dragOver(event)" ondragleave="dragLeave()" ondrop="dropFile(event)" style="margin-bottom:18px;cursor:pointer;">
     <span class="opt-badge">OPCIONAL</span>
     <div style="font-size:22px">📄</div>
     <div>
@@ -219,16 +220,16 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
       <div style="font-size:10px;color:var(--muted);font-family:var(--mono)">Sube el .xlsx del mes anterior para detectar contratos nuevos — arrastra o haz clic</div>
       <div style="font-size:10px;color:var(--green);font-family:var(--mono);margin-top:4px" id="name-prev"></div>
     </div>
-    <input type="file" id="file-prev" accept=".xlsx">
+    <input type="file" id="file-prev" accept=".xlsx" onchange="loadPrev(event)">
   </label>
 
   <!-- Opciones -->
   <div class="options-row">
     <span class="opt-label">Reporte:</span>
     <div class="toggle-group">
-      <button class="toggle-btn active" id="btn-todos">📋 Todos</button>
-      <button class="toggle-btn" id="btn-nuevos">✨ Solo nuevos</button>
-      <button class="toggle-btn" id="btn-mes">📅 Por mes</button>
+      <button class="toggle-btn active" id="btn-todos" onclick="setTipo('todos')">📋 Todos</button>
+      <button class="toggle-btn" id="btn-nuevos" onclick="setTipo('nuevos')">✨ Solo nuevos</button>
+      <button class="toggle-btn" id="btn-mes" onclick="setTipo('mes')">📅 Por mes</button>
     </div>
     <select id="sel-mes" style="display:none">
       <option value="1">Enero</option><option value="2">Febrero</option><option value="3" selected>Marzo</option>
@@ -236,7 +237,11 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
       <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
       <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
     </select>
-    <select id="sel-anio" style="display:none"></select>
+    <select id="sel-anio" style="display:none">
+      <option value="2024">2024</option>
+      <option value="2025">2025</option>
+      <option value="2026" selected>2026</option>
+    </select>
   </div>
 
   <div class="config-panel">
@@ -257,8 +262,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
     </div>
   </div>
 
-  <button class="process-btn" id="btn-process" disabled>⚡ Generar reporte APPUI</button>
-  <button class="icon-btn" id="btn-cancel" style="display:none;width:100%;padding:12px;margin-bottom:24px;">✕ Cancelar descarga</button>
+  <button class="process-btn" id="btn-process" onclick="procesar()" disabled>⚡ Generar reporte APPUI</button>
 
   <div class="progress-wrap" id="progress-wrap">
     <div class="progress-label" id="progress-label">Iniciando...</div>
@@ -278,15 +282,16 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
     <div class="sector-grid" id="sector-grid"></div>
     <div class="val-banner" id="val-banner"></div>
     <div class="download-row">
-      <button class="dl-btn primary" id="btn-dl-completo">⬇ CSV completo — subir a APPUI</button>
-      <button class="dl-btn secondary" id="btn-dl-nuevos">⬇ CSV solo nuevos</button>
-      <button class="dl-btn tertiary" id="btn-dl-excel">⬇ Excel revisión (con colores)</button>
-      <button class="dl-btn warn-btn" id="btn-dl-atencion">⬇ CSV incompletos</button>
+      <button class="dl-btn primary" onclick="descargarCSV('completo')">⬇ CSV completo — subir a APPUI</button>
+      <button class="dl-btn secondary" onclick="descargarCSV('nuevos')">⬇ CSV solo nuevos</button>
+      <button class="dl-btn tertiary" onclick="descargarExcel()">⬇ Excel revisión (con colores)</button>
+      <button class="dl-btn warn-btn" onclick="descargarCSV('atencion')">⬇ CSV incompletos</button>
     </div>
     <div class="tabs">
-      <button class="tab active" id="tab-todos">Todos <span id="cnt-todos" style="color:var(--muted);font-weight:400"></span></button>
-      <button class="tab" id="tab-nv">Nuevos <span id="cnt-nv" style="color:var(--muted);font-weight:400"></span></button>
-      <button class="tab" id="tab-manual">Requieren atención <span id="cnt-manual" style="color:var(--red);font-weight:400"></span></button>
+      <div class="tab active" id="tab-todos" onclick="switchTab('todos')">Todos <span id="cnt-todos" style="color:var(--muted);font-weight:400"></span></div>
+      <div class="tab" id="tab-nv" onclick="switchTab('nuevos')">Nuevos <span id="cnt-nv" style="color:var(--muted);font-weight:400"></span></div>
+      <div class="tab" id="tab-mod" onclick="switchTab('modificados')">Modificados <span id="cnt-mod" style="color:var(--yellow);font-weight:400"></span></div>
+      <div class="tab" id="tab-manual" onclick="switchTab('manual')">Requieren atención <span id="cnt-manual" style="color:var(--red);font-weight:400"></span></div>
     </div>
     <div class="preview-wrap">
       <div class="preview-header">
@@ -297,10 +302,9 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
         <span style="margin-left:auto;font-size:9px;color:var(--muted)">Clic en celda amarilla/roja para editar</span>
       </div>
       <div class="table-controls">
-        <input class="table-search" id="table-search" placeholder="Buscar por nombre, NIT, ID contrato...">
+        <input class="table-search" id="table-search" placeholder="Buscar por nombre, NIT, ID contrato..." oninput="filtrarTabla()">
       </div>
       <div class="table-wrap"><table><thead id="preview-head"></thead><tbody id="preview-body"></tbody></table></div>
-      <button class="icon-btn" id="btn-show-all" style="display:none;width:100%;padding:10px;margin:8px 0;border-radius:0 0 10px 10px;"></button>
     </div>
   </div>
 
@@ -312,9 +316,6 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
 let sheetsData=null, apiData=null, prevData=null;
 let reporteCompleto=[],reporteNuevos=[],reporteAtencion=[];
 let tipoReporte='todos', tabActual='todos';
-let abortController=null;
-let _searchTimer=null;
-let _mostrarTodos=false;
 
 // ─── Mappings ─────────────────────────────────────────────
 const MODALIDAD_MAP={'LICITACIÓN PÚBLICA':1,'LICITACION PUBLICA':1,'LICITACION':1,'CONCURSO DE MÉRITOS':2,'CONCURSO DE MERITOS':2,'CONCURSO':2,'SELECCIÓN ABREVIADA':3,'SELECCION ABREVIADA':3,'MENOR CUANTÍA':3,'MENOR CUANTIA':3,'MÍNIMA CUANTÍA':6,'MINIMA CUANTIA':6,'CONTRATACIÓN DIRECTA':7,'CONTRATACION DIRECTA':7,'DIRECTA':7,'CONTRATACIÓN PRIVADA':10,'CONTRATACION PRIVADA':10,'RÉGIMEN ESPECIAL':11,'REGIMEN ESPECIAL':11};
@@ -334,55 +335,6 @@ window.onload = () => {
   // Cargar NIT guardado (o usar el de La Guajira por defecto)
   const savedNit = localStorage.getItem('appui_nit_api');
   if (savedNit) document.getElementById('api-nit').value = savedNit;
-  // Generar opciones de año dinámicamente
-  const anioActual = new Date().getFullYear();
-  const selAnio = document.getElementById('sel-anio');
-  for (let y = anioActual - 2; y <= anioActual + 1; y++) {
-    const opt = document.createElement('option');
-    opt.value = y; opt.textContent = y;
-    if (y === anioActual) opt.selected = true;
-    selAnio.appendChild(opt);
-  }
-  // Cargar y persistir configuración
-  ['cfg-supervisores','cfg-vigencia','cfg-entidad'].forEach(id=>{
-    const saved=localStorage.getItem('appui_'+id);
-    if(saved!==null) document.getElementById(id).value=saved;
-    document.getElementById(id).addEventListener('input',()=>{
-      localStorage.setItem('appui_'+id, document.getElementById(id).value);
-    });
-  });
-  // Búsqueda con debounce
-  document.getElementById('table-search').addEventListener('input',()=>{
-    clearTimeout(_searchTimer);
-    _searchTimer=setTimeout(filtrarTabla,200);
-  });
-  // Mostrar todos los registros
-  document.getElementById('btn-show-all').addEventListener('click', mostrarTodos);
-  // Fuentes
-  document.getElementById('sheets-url').addEventListener('input', guardarURL);
-  document.getElementById('btn-conectar-sheets').addEventListener('click', ()=>conectarSheets());
-  document.getElementById('btn-verificar-api').addEventListener('click', verificarAPI);
-  // Subida reporte anterior
-  document.getElementById('card-prev').addEventListener('dragover', dragOver);
-  document.getElementById('card-prev').addEventListener('dragleave', dragLeave);
-  document.getElementById('card-prev').addEventListener('drop', dropFile);
-  document.getElementById('file-prev').addEventListener('change', loadPrev);
-  // Tipo de reporte
-  document.getElementById('btn-todos').addEventListener('click', ()=>setTipo('todos'));
-  document.getElementById('btn-nuevos').addEventListener('click', ()=>setTipo('nuevos'));
-  document.getElementById('btn-mes').addEventListener('click', ()=>setTipo('mes'));
-  // Procesar / cancelar
-  document.getElementById('btn-process').addEventListener('click', procesar);
-  document.getElementById('btn-cancel').addEventListener('click', cancelarProceso);
-  // Descargas
-  document.getElementById('btn-dl-completo').addEventListener('click', ()=>descargarCSV('completo'));
-  document.getElementById('btn-dl-nuevos').addEventListener('click', ()=>descargarCSV('nuevos'));
-  document.getElementById('btn-dl-excel').addEventListener('click', descargarExcel);
-  document.getElementById('btn-dl-atencion').addEventListener('click', ()=>descargarCSV('atencion'));
-  // Tabs
-  document.getElementById('tab-todos').addEventListener('click', ()=>switchTab('todos'));
-  document.getElementById('tab-nv').addEventListener('click', ()=>switchTab('nuevos'));
-  document.getElementById('tab-manual').addEventListener('click', ()=>switchTab('manual'));
 };
 
 function guardarURL() {
@@ -393,7 +345,7 @@ function guardarURL() {
 // ─── Google Sheets connector ──────────────────────────────
 async function conectarSheets(silencioso=false) {
   const urlInput = document.getElementById('sheets-url').value.trim();
-  if (!urlInput) { setSourceInfo('sheets','Pega el link de tu Google Sheet primero.','err'); return; }
+  if (!urlInput) { alert('Pega el link de tu Google Sheet primero.'); return; }
 
   const btn = document.querySelector('#card-sheets .icon-btn.primary');
   btn.textContent = '⏳ Conectando...';
@@ -473,7 +425,7 @@ function sheetsToObjects(rows) {
 // ─── API Socrata ──────────────────────────────────────────
 async function verificarAPI() {
   const nit = document.getElementById('api-nit').value.trim().replace(/[^0-9]/g,'');
-  if (!nit) { setSourceInfo('api','Escribe el NIT de la entidad.','err'); return; }
+  if (!nit) { alert('Escribe el NIT de la entidad.'); return; }
   localStorage.setItem('appui_nit_api', nit);
 
   const btn = document.querySelector('#card-api .icon-btn.primary');
@@ -503,14 +455,14 @@ async function verificarAPI() {
   checkReady();
 }
 
-async function cargarDatosAPI(nit, onProgress, signal) {
+async function cargarDatosAPI(nit, onProgress) {
   const LIMIT = 1000;
   let offset = 0, todos = [];
   while (true) {
     onProgress(`Descargando contratos desde API... (${todos.length} descargados)`);
     // Filtrar por nit_entidad — campo snake_case en la API Socrata
     const url = `https://www.datos.gov.co/resource/jbjy-vk9h.json?$where=nit_entidad='${nit}'&$limit=${LIMIT}&$offset=${offset}`;
-    const resp = await fetch(url, signal ? {signal} : {});
+    const resp = await fetch(url);
     if (!resp.ok) throw new Error(`Error API: HTTP ${resp.status}`);
     const batch = await resp.json();
     todos = todos.concat(batch);
@@ -518,10 +470,6 @@ async function cargarDatosAPI(nit, onProgress, signal) {
     offset += LIMIT;
   }
   return todos;
-}
-
-function cancelarProceso(){
-  if(abortController) abortController.abort();
 }
 
 // ─── Helpers UI ───────────────────────────────────────────
@@ -551,17 +499,14 @@ function procesarPrev(f){
   const reader=new FileReader();
   reader.onload=ev=>{
     try{
-      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const wb=XLSX.read(ev.target.result,{type:'binary'});
       const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
       prevData={data};
       document.getElementById('card-prev').classList.add('uploaded');
       document.getElementById('name-prev').textContent=`✓ ${f.name} · ${data.length} registros`;
-    }catch(err){
-      document.getElementById('name-prev').style.color='var(--red)';
-      document.getElementById('name-prev').textContent='✗ Error: '+err.message;
-    }
+    }catch(err){alert('Error al leer el archivo: '+err.message);}
   };
-  reader.readAsArrayBuffer(f);
+  reader.readAsBinaryString(f);
 }
 
 function setTipo(t){
@@ -571,6 +516,24 @@ function setTipo(t){
   const esMes=t==='mes';
   document.getElementById('sel-mes').style.display=esMes?'block':'none';
   document.getElementById('sel-anio').style.display=esMes?'block':'none';
+}
+function buscarRecurso(row,...claves){
+  // Buscar por nombre exacto primero
+  for(const k of claves){
+    const v=row[k];
+    if(v&&String(v).trim()!=='0'&&String(v).trim()!=='')return String(v).trim();
+  }
+  // Si no, buscar en todas las keys del objeto por coincidencia parcial
+  const keys=Object.keys(row);
+  for(const kw of claves){
+    const kwNorm=kw.toLowerCase().replace(/[^a-z0-9]/g,'');
+    const found=keys.find(k=>k.toLowerCase().replace(/[^a-z0-9]/g,'').includes(kwNorm));
+    if(found){
+      const v=row[found];
+      if(v&&String(v).trim()!=='0'&&String(v).trim()!=='')return String(v).trim();
+    }
+  }
+  return'0';
 }
 function mapear(val,mapa){if(!val)return'';const k=String(val).trim().toUpperCase();if(mapa[k]!==undefined)return String(mapa[k]);for(const[key,v]of Object.entries(mapa)){if(k.includes(key))return String(v);}return'';}
 function normFecha(val){
@@ -601,30 +564,24 @@ async function tick(){await new Promise(r=>setTimeout(r,15));}
 async function procesar() {
   document.getElementById('progress-wrap').style.display='block';
   document.getElementById('results').style.display='none';
-  document.getElementById('btn-process').style.display='none';
-  document.getElementById('btn-cancel').style.display='block';
+  document.getElementById('btn-process').disabled=true;
   document.getElementById('log-box').innerHTML='';
   document.getElementById('step3').classList.add('active');
-  abortController=new AbortController();
   await tick();
 
   const supExcluir=document.getElementById('cfg-supervisores').value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
-  const nitEntidad = document.getElementById('api-nit').value.trim().replace(/[^0-9]/g,'');
+  const nit = document.getElementById('api-nit').value.trim().replace(/[^0-9]/g,'');
 
   // ── 1. Cargar DA desde API ──
   setProgress(5,'Descargando Datos Abiertos desde API...');
   log('Conectando con API de datos.gov.co...','ok');
   let daRows=[];
   try {
-    daRows = await cargarDatosAPI(nitEntidad, msg => log(msg,'ok'), abortController.signal);
+    daRows = await cargarDatosAPI(nit, msg => log(msg,'ok'));
     log(`✓ ${daRows.length} contratos descargados de SECOP II`,'ok');
   } catch(err) {
-    const cancelado=err.name==='AbortError';
-    log(cancelado?'⏹ Descarga cancelada.':'✗ Error descargando DA: '+err.message, cancelado?'warn':'err');
-    document.getElementById('btn-process').style.display='block';
+    log('✗ Error descargando DA: '+err.message,'err');
     document.getElementById('btn-process').disabled=false;
-    document.getElementById('btn-cancel').style.display='none';
-    abortController=null;
     return;
   }
 
@@ -634,12 +591,12 @@ async function procesar() {
   const reqObjs = sheetsToObjects(sheetsData);
   const reqNit={}, reqSecop={}, secopRiesgo=new Set();
   for(const row of reqObjs){
-    const nitReq=clean(row['IDENTIFICACION']).toUpperCase();
+    const nit=clean(row['IDENTIFICACION']).replace(/[^0-9]/g,'');
     const secop=clean(row['ID DEL CONTRATO SECOP']).toUpperCase();
     const sup=clean(row['SUPERVISOR(A)']).toUpperCase();
     const esRiesgo=supExcluir.some(kw=>sup.includes(kw));
     if(esRiesgo){if(secop)secopRiesgo.add(secop);}
-    else{if(nitReq&&!reqNit[nitReq])reqNit[nitReq]=row;if(secop&&!reqSecop[secop])reqSecop[secop]=row;}
+    else{if(nit&&!reqNit[nit])reqNit[nit]=row;if(secop&&!reqSecop[secop])reqSecop[secop]=row;}
   }
   log(`Requerimiento: ${reqObjs.length} registros · ${secopRiesgo.size} de riesgo excluidos`,'ok');
 
@@ -693,9 +650,9 @@ async function procesar() {
       return clean(row[col]||row[snk]||'');
     };
 
-    const nitContratista=d('Documento Proveedor')||clean(row['documento_proveedor']||row['nit_del_proveedor']||'');
+    const nit=(d('Documento Proveedor')||clean(row['documento_proveedor']||row['nit_del_proveedor']||'')).replace(/[^0-9]/g,'');
     const secop=d('ID Contrato')||clean(row['id_contrato']||'');
-    const nitUp=nitContratista.toUpperCase(), secopUp=secop.toUpperCase();
+    const nitUp=nit.toUpperCase(), secopUp=secop.toUpperCase();
     const req=reqNit[nitUp]||reqSecop[secopUp]||{};
     const esNuevo=idsPrev.size>0&&!idsPrev.has(secopUp);
     const r=col=>clean(req[col]||'');
@@ -706,30 +663,31 @@ async function procesar() {
     const nombreC=getDA('Proveedor Adjudicado','proveedor_adjudicado');
     const tipoContrato=getDA('Tipo de Contrato','tipo_de_contrato');
     const modalidad=getDA('Modalidad de Contratacion','modalidad_de_contratacion');
-    const fechaFirma=normFecha(row['Fecha de Firma']||row['fecha_de_firma']||'');
+    const fechaFirma=normFecha(row['Fecha de Firma']||row['fecha_de_firma']||'')||normFecha(r('FECHA SUSCRIPCION CONTRATO'));
     const objeto=getDA('Objeto del Contrato','objeto_del_contrato');
     const fechaInicio=normFecha(row['Fecha de Inicio del Contrato']||row['fecha_de_inicio_del_contrato']||'');
     const duracion=getDA('Duración del contrato','duraci_n_del_contrato');
     const fechaFin=row['Fecha de Fin del Contrato']||row['fecha_de_fin_del_contrato']||'';
     const fechaLiq=row['Fecha Fin Liquidacion']||row['fecha_fin_liquidacion']||'';
     const estadoC=getDA('Estado Contrato','estado_contrato');
-    const sgp=getDA('Sistema General de Participaciones','sistema_general_de_participaciones');
-    const sgr=getDA('Sistema General de Regalías','sistema_general_de_regal_as');
-    const propios=getDA('Recursos Propios (Alcaldías, Gobernaciones y Resguardos Indígenas)','recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas');
-    const pgn=getDA('Presupuesto General de la Nacion – PGN','presupuesto_general_de_la_nacion_pgn');
-    const credito=getDA('Recursos de Credito','recursos_de_credito');
+    const sgp=buscarRecurso(row,'Sistema General de Participaciones','sistema_general_de_participaciones','sistema_general_de_participaci_n');
+    const sgr=buscarRecurso(row,'Sistema General de Regalías','sistema_general_de_regal_as','sistema_general_de_regalias');
+    const propios=buscarRecurso(row,'Recursos Propios (Alcaldías, Gobernaciones y Resguardos Indígenas)','recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas','recursos_propios_alcald','recursos_propios');
+    const pgn=buscarRecurso(row,'Presupuesto General de la Nacion – PGN','presupuesto_general_de_la_nacion_pgn','presupuesto_general_de_la_naci_n_pgn','presupuesto_general');
+    const credito=buscarRecurso(row,'Recursos de Credito','recursos_de_credito','recursos_de_cr_dito');
     const anticipo=parseFloat((getDA('Valor de pago adelantado','valor_de_pago_adelantado')||'0').replace(/[^0-9.]/g,''))>0;
     const amortizado=getDA('Valor Amortizado','valor_amortizado');
     const diasAd=getDA('Dias adicionados','dias_adicionados');
 
-    let ft=normFecha(fechaFin);if(!ft)ft='1900-01-01';
+    // Debug recursos en primera fila
+    if(i===0) log(`Muestra recursos fila 1 — SGP:${sgp||'0'} Propios:${propios||'0'} PGN:${pgn||'0'}`,'warn');
     let fl=normFecha(fechaLiq);if(!fl)fl='1800-01-01';
     const sectorial=r('SECTORIAL').toUpperCase();
     const sectorNum=mapear(sectorial,SECTOR_MAP)||'';
     if(sectorNum)sectorCount[sectorNum]=(sectorCount[sectorNum]||0)+1;
 
     const fila={
-      idContrato:d('Referencia del Contrato')||d('ID Contrato'),
+      idContrato:r('No CONTRATO INTERNO'),
       lineaProyecto:'',
       publicaSecop:'SI',
       idContratoSecop:secop,
@@ -737,12 +695,12 @@ async function procesar() {
       modalidad:mapear(modalidad,MODALIDAD_MAP)||'13',
       interventoria:'0',
       esConvenioInterAdministrativo:tipoContrato.toUpperCase().includes('CONVENIO')?'SI':'NO',
-      numeroContratoInternoConvenio:r('N° PROCESO DE CONTRATACIÓN'),
+      numeroContratoInternoConvenio:tipoContrato.toUpperCase().includes('CONVENIO')?r('N° PROCESO DE CONTRATACIÓN'):'0',
       ordenEntidadContratista:'4',
       proyectos:r('NUMERO CODIGO BPIN')||'0',
       sectorContrato:sectorNum,
       tipoIdentificacionContratista:mapear(tipoDoc,TIPO_DOC_MAP)||'1',
-      identificacionContratista:nitContratista,
+      identificacionContratista:nit,
       nombreContratista:nombreC,
       anticipoContrato:anticipo?'SI':'NO',
       valorPagadoAnticipo:amortizado||'0',
@@ -761,16 +719,17 @@ async function procesar() {
       fechaActaLiquidacion:fl,
       estadoContrato:mapear(estadoC,ESTADO_MAP)||'1',
       compromisos:r('No CDP')||'0',
-      valorTotalSGP:d('Sistema General de Participaciones')||'0',
-      valorTotalSGR:d('Sistema General de Regalías')||'0',
-      valorTotalPropios:d('Recursos Propios (Alcaldías, Gobernaciones y Resguardos Indígenas)')||'0',
-      valorTotalPgn:d('Presupuesto General de la Nacion – PGN')||'0',
-      valorTotalOtros:d('Recursos de Credito')||'0',
-      nroPoliza:r('NUMERO DE POLIZAS')||'N/A',
+      valorTotalSGP:sgp||'0',
+      valorTotalSGR:sgr||'0',
+      valorTotalPropios:propios||'0',
+      valorTotalPgn:pgn||'0',
+      valorTotalOtros:credito||'0',
+      nroPoliza:r('NUMERO DE POLIZAS')||'0',
       observaciones:'',
     };
     fila._esNuevo=esNuevo;
-    fila._requiereAtencion=!fila.sectorContrato||!fila.idContrato||!fila.fechaInicioContrato;
+    fila._tieneCruce=Object.keys(req).length>0;
+    fila._requiereAtencion=!fila.sectorContrato||!fila.idContrato||!fila.fechaInicioContrato||!fila.fechaFirmaContrato;
     if(!fila.sectorContrato||!fila.idContrato)filasManual++;
     const tieneVacio=Object.entries(fila).filter(([k])=>!k.startsWith('_')).some(([k,v])=>!v&&k!=='lineaProyecto'&&k!=='observaciones'&&k!=='fechaPagoAnticipo');
     if(tieneVacio)filasVacias++;
@@ -778,9 +737,41 @@ async function procesar() {
   }
 
   reporteCompleto=resultado;
-  reporteCompleto.forEach((r,i)=>r._id=i);
   reporteNuevos=resultado.filter(r=>r._esNuevo);
   reporteAtencion=resultado.filter(r=>r._requiereAtencion);
+
+  // Detectar modificados — contratos que ya existían pero cambiaron de estado
+  const reporteModificados=[];
+  if(prevData&&prevData.data.length>0){
+    const prevMap={};
+    for(const row of prevData.data){
+      const id=clean(row['idContratoSecop']||row['ID Contrato']||'').toUpperCase();
+      if(id)prevMap[id]=row;
+    }
+    for(const r of resultado){
+      const prev=prevMap[r.idContratoSecop?.toUpperCase()];
+      if(prev&&!r._esNuevo){
+        const estadoAntes=clean(prev['estadoContrato']||'');
+        const estadoAhora=r.estadoContrato;
+        if(estadoAntes&&estadoAhora&&estadoAntes!==estadoAhora){
+          r._modificado=true;
+          r._estadoAntes=estadoAntes;
+          reporteModificados.push(r);
+        }
+      }
+    }
+    if(reporteModificados.length>0)
+      log(`🔄 ${reporteModificados.length} contratos cambiaron de estado vs mes anterior`,'warn');
+  }
+  window._reporteModificados=reporteModificados;
+
+  // Alerta contratos sin cruzar
+  const sinCruzar=resultado.filter(r=>!r._tieneCruce);
+  if(sinCruzar.length>0){
+    log(`⚠ ${sinCruzar.length} contratos NO encontrados en el Requerimiento — idContrato, sector y CDP quedarán vacíos`,'warn');
+  } else {
+    log('✓ Todos los contratos cruzaron con el Requerimiento','ok');
+  }
 
   setProgress(98,'Validando...');await tick();
   mostrarValidacion(validarCSV(resultado));
@@ -792,6 +783,7 @@ async function procesar() {
   renderSectorGrid(sectorCount);
   document.getElementById('cnt-todos').textContent=`(${resultado.length})`;
   document.getElementById('cnt-nv').textContent=`(${reporteNuevos.length})`;
+  document.getElementById('cnt-mod').textContent=`(${reporteModificados.length})`;
   document.getElementById('cnt-manual').textContent=`(${reporteAtencion.length})`;
   setProgress(100,'✓ Completado');
   log(`✓ ${resultado.length} contratos procesados`,'ok');
@@ -799,10 +791,7 @@ async function procesar() {
   if(filasManual>0)log(`⚠ ${filasManual} filas necesitan sector o número de contrato`,'warn');
   document.getElementById('step4').classList.add('active');
   document.getElementById('results').style.display='block';
-  document.getElementById('btn-process').style.display='block';
   document.getElementById('btn-process').disabled=false;
-  document.getElementById('btn-cancel').style.display='none';
-  abortController=null;
   renderTabla(tipoReporte==='nuevos'?reporteNuevos:resultado);
   document.getElementById('results').scrollIntoView({behavior:'smooth'});
 }
@@ -820,14 +809,7 @@ function mostrarValidacion(errores){
   const b=document.getElementById('val-banner');
   b.style.display='block';
   if(errores.length===0){b.className='val-banner ok';b.textContent='✓ Sin errores críticos — CSV listo para subir a APPUI.';}
-  else if(errores.length<15){
-    b.className='val-banner warn';
-    b.textContent='';
-    const header=document.createTextNode(`⚠ ${errores.length} advertencias:`);
-    b.appendChild(header);
-    errores.slice(0,6).forEach(msg=>{b.appendChild(document.createElement('br'));b.appendChild(document.createTextNode(msg));});
-    if(errores.length>6){b.appendChild(document.createElement('br'));b.appendChild(document.createTextNode(`...y ${errores.length-6} más`));}
-  }
+  else if(errores.length<15){b.className='val-banner warn';b.innerHTML=`⚠ ${errores.length} advertencias:<br>`+errores.slice(0,6).join('<br>')+(errores.length>6?`<br>...y ${errores.length-6} más`:'');}
   else{b.className='val-banner err';b.textContent=`✗ ${errores.length} campos obligatorios vacíos. Revisa "Requieren atención" antes de subir a APPUI.`;}
 }
 function renderSectorGrid(counts){
@@ -836,23 +818,29 @@ function renderSectorGrid(counts){
   g.innerHTML=s.map(([k,v])=>`<div class="sector-pill"><span class="sector-name">${SECTOR_LABELS[k]||'Sector '+k}</span><span class="sector-count">${v}</span></div>`).join('');
   if(!s.length)g.innerHTML='<div style="color:var(--muted);font-size:11px;font-family:var(--mono);grid-column:1/-1;padding:8px">Sin sectores detectados.</div>';
 }
+function getTabData(t){
+  const mod=window._reporteModificados||[];
+  if(t==='todos')return reporteCompleto;
+  if(t==='nuevos')return reporteNuevos;
+  if(t==='modificados')return mod;
+  return reporteAtencion;
+}
 function switchTab(t){
-  tabActual=t;_mostrarTodos=false;
+  tabActual=t;
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
-  document.getElementById('tab-'+t).classList.add('active');
+  const el=document.getElementById('tab-'+t);if(el)el.classList.add('active');
   document.getElementById('table-search').value='';
-  renderTabla(t==='todos'?reporteCompleto:t==='nuevos'?reporteNuevos:reporteAtencion);
+  renderTabla(getTabData(t));
 }
 function filtrarTabla(){
   const q=document.getElementById('table-search').value.toLowerCase();
-  if(q)_mostrarTodos=false;
-  const base=tabActual==='todos'?reporteCompleto:tabActual==='nuevos'?reporteNuevos:reporteAtencion;
+  const base=getTabData(tabActual);
   renderTabla(q?base.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().includes(q))):base,!!q);
 }
 let sortCol=null,sortAsc=true;
 function sortBy(col){
   if(sortCol===col)sortAsc=!sortAsc;else{sortCol=col;sortAsc=true;}
-  const base=tabActual==='todos'?reporteCompleto:tabActual==='nuevos'?reporteNuevos:reporteAtencion;
+  const base=getTabData(tabActual);
   renderTabla([...base].sort((a,b)=>{const va=String(a[col]||''),vb=String(b[col]||'');return sortAsc?va.localeCompare(vb):vb.localeCompare(va);}),true);
 }
 function renderTabla(data,filtered=false){
@@ -863,30 +851,24 @@ function renderTabla(data,filtered=false){
   const allCols=Object.keys(data[0]).filter(k=>!k.startsWith('_'));
   const cols=[...COLS_PRIORITY.filter(c=>allCols.includes(c)),...allCols.filter(c=>!COLS_PRIORITY.includes(c))];
   document.getElementById('preview-head').innerHTML='<tr>'+cols.map(c=>`<th onclick="sortBy('${c}')">${c}${sortCol===c?(sortAsc?' ↑':' ↓'):''}</th>`).join('')+'</tr>';
-  const filas=_mostrarTodos?data:data.slice(0,300);
-  const btnAll=document.getElementById('btn-show-all');
-  if(data.length>300&&!_mostrarTodos){btnAll.style.display='block';btnAll.textContent=`Ver todos los ${data.length} registros`;}
-  else{btnAll.style.display='none';}
-  document.getElementById('preview-body').innerHTML=filas.map((row)=>
-    `<tr class="${row._esNuevo?'nuevo-row':''}" data-id="${row._id}">`+cols.map(col=>{
+  document.getElementById('preview-body').innerHTML=data.slice(0,300).map((row,ri)=>
+    `<tr class="${row._esNuevo?'nuevo-row':''}">`+cols.map(col=>{
       const v=row[col];
       const isManual=col==='lineaProyecto'||col==='observaciones';
       const isEmpty=!v&&col!=='lineaProyecto'&&col!=='observaciones'&&col!=='fechaPagoAnticipo';
       const cls=isEmpty?'empty':isManual?'manual':'ok';
       const display=isManual?'AGREGAR MANUALMENTE':(v||'—');
       const ed=(isManual||isEmpty)?'contenteditable="true"':'';
-      return`<td class="${cls}" title="${String(v||'')}" ${ed} onblur="editarCelda(this,'${col}')">${display}</td>`;
+      return`<td class="${cls}" title="${String(v||'')}" ${ed} onblur="editarCelda(this,${ri},'${col}')">${display}</td>`;
     }).join('')+'</tr>'
   ).join('');
-  document.getElementById('preview-count').textContent=`${data.length} registros${data.length>300&&!_mostrarTodos?' (mostrando 300)':''}${filtered?' — filtrados':''}`;
+  document.getElementById('preview-count').textContent=`${data.length} registros${data.length>300?' (mostrando 300)':''}${filtered?' — filtrados':''}`;
 }
-function mostrarTodos(){_mostrarTodos=true;filtrarTabla();}
-function editarCelda(el,col){
+function editarCelda(el,ri,col){
   const val=el.textContent.trim();
   if(val==='AGREGAR MANUALMENTE'||val==='—')return;
-  const id=parseInt(el.closest('tr').dataset.id);
-  const row=reporteCompleto[id];
-  if(row){row[col]=val;el.className=val?'ok':'empty';el.removeAttribute('contenteditable');}
+  const base=tabActual==='todos'?reporteCompleto:tabActual==='nuevos'?reporteNuevos:reporteAtencion;
+  if(base[ri]){base[ri][col]=val;el.className=val?'ok':'empty';el.removeAttribute('contenteditable');}
 }
 function limpiarParaCSV(fila){
   const out={};
@@ -900,7 +882,7 @@ function limpiarParaCSV(fila){
 }
 function descargarCSV(tipo){
   const data=tipo==='completo'?reporteCompleto:tipo==='nuevos'?reporteNuevos:reporteAtencion;
-  if(!data||!data.length)return;
+  if(!data||!data.length){alert('No hay datos.');return;}
   const cols=Object.keys(data[0]).filter(k=>!k.startsWith('_'));
   const csv=[cols.join('|'),...data.map(f=>{const l=limpiarParaCSV(f);return cols.map(c=>l[c]||'').join('|');})].join('\n');
   const entidad=document.getElementById('cfg-entidad').value||'CONTRATACION';
@@ -908,10 +890,10 @@ function descargarCSV(tipo){
   const suf=tipo==='nuevos'?'_NUEVOS':tipo==='atencion'?'_ATENCION':'';
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/plain;charset=utf-8'}));
-  a.download=`${entidad}${suf}_${fecha}.csv`;a.click();URL.revokeObjectURL(a.href);
+  a.download=`${entidad}${suf}_${fecha}.csv`;a.click();
 }
 function descargarExcel(){
-  if(!reporteCompleto.length)return;
+  if(!reporteCompleto.length){alert('Primero genera el reporte.');return;}
   const wb=XLSX.utils.book_new();
   [[reporteCompleto,'APPUI Completo'],[reporteNuevos,'Nuevos'],[reporteAtencion,'Requieren Atención']].forEach(([data,nombre])=>{
     if(!data.length)return;
