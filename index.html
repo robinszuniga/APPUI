@@ -152,7 +152,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
 <div class="header">
   <div class="header-icon">📋</div>
   <div><h1>APPUI Procesador</h1><span>Gobernación de La Guajira — DIARI / Contraloría General</span></div>
-  <div class="badge">v5.5 · 2026</div>
+  <div class="badge">v5.6 · 2026</div>
 </div>
 
 <div class="main">
@@ -216,7 +216,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
       <div class="source-icon" style="background:rgba(240,165,0,0.15);">⚡</div>
       <div>
         <div class="source-title">Reporte en un clic</div>
-        <div class="source-sub">Contratos firmados o iniciados en el periodo · descarga el CSV listo para APPUI</div>
+        <div class="source-sub">Contratos del año firmados o iniciados en el periodo · descarga el CSV listo para APPUI</div>
       </div>
     </div>
     <div class="input-row" style="flex-wrap:wrap;">
@@ -462,21 +462,25 @@ function convertirACSV(url) {
 }
 
 function parseCSV(text) {
-  const lines = text.trim().split('\n');
-  const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g,'').trim());
-  return [headers, ...lines.slice(1).map(line => {
-    // Parseo básico de CSV respetando comillas
-    const vals = [];
-    let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { inQ = !inQ; }
-      else if (c === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
+  // Lee el CSV celda por celda respetando comillas: una celda puede traer comas,
+  // comillas dobles ("") y saltos de línea adentro (el Sheet real los tiene en cientos de filas).
+  const rows = [];
+  let row = [], cur = '', inQ = false;
+  const limpia = v => v.replace(/\s*[\r\n]+\s*/g,' ').trim();
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else inQ = false; }
       else cur += c;
     }
-    vals.push(cur.trim());
-    return vals;
-  })];
+    else if (c === '"') inQ = true;
+    else if (c === ',') { row.push(limpia(cur)); cur = ''; }
+    else if (c === '\n') { row.push(limpia(cur)); rows.push(row); row = []; cur = ''; }
+    else if (c !== '\r') cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(limpia(cur)); rows.push(row); }
+  // Fuera las filas completamente vacías (la primera fila que queda es el encabezado)
+  return rows.filter(r => r.some(v => v !== ''));
 }
 
 function sheetsToObjects(rows) {
@@ -533,7 +537,8 @@ async function cargarDatosAPI(nit, anio, onProgress, mes, mesDesde) {
     const mm = String(mes).padStart(2,'0');
     const ultimoDia = String(new Date(anio, mes, 0).getDate()).padStart(2,'0');
     const d1 = `${anio}-${String(mesDesde||mes).padStart(2,'0')}-01T00:00:00.000`, d2 = `${anio}-${mm}-${ultimoDia}T23:59:59.999`;
-    where = `nit_entidad='${nit}' AND ((fecha_de_firma>='${d1}' AND fecha_de_firma<='${d2}') OR (fecha_de_inicio_del_contrato>='${d1}' AND fecha_de_inicio_del_contrato<='${d2}'))`;
+    // Solo contratos firmados en ese mismo año (los firmados el año anterior no están en el Requerimiento de este año)
+    where = `nit_entidad='${nit}' AND fecha_de_firma>='${fechaDesde}' AND ((fecha_de_firma>='${d1}' AND fecha_de_firma<='${d2}') OR (fecha_de_inicio_del_contrato>='${d1}' AND fecha_de_inicio_del_contrato<='${d2}'))`;
   }
   while (true) {
     onProgress(`Descargando contratos desde API... (${todos.length} descargados)`);
@@ -731,6 +736,21 @@ function normFecha(val){
   m=s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);if(m)return`${m[1]}-${m[2]}-${m[3]}`;
   return'';
 }
+// "$1.234.567" → "1234567" (quita signos, puntos de miles y centavos)
+function soloPesos(val){let s=String(val||'').replace(/[^0-9.,]/g,'');s=s.replace(/[.,]\d{1,2}$/,'');return s.replace(/[^0-9]/g,'').replace(/^0+/,'');}
+// "1 mes 15 dias" → 45 · "30 dias" → 30 · "2 meses" → 60 (mes = 30 días, igual que plazoADias)
+function textoADias(val){
+  const s=String(val||'').toLowerCase();let d=0,m;
+  if((m=s.match(/(\d+)\s*a[ñn]o/)))d+=parseInt(m[1])*360;
+  if((m=s.match(/(\d+)\s*mes/)))d+=parseInt(m[1])*30;
+  if((m=s.match(/(\d+)\s*d[ií]a/)))d+=parseInt(m[1]);
+  if(!d&&/^\s*\d+\s*$/.test(s))d=parseInt(s);
+  return d;
+}
+// "N/A", "NO APLICA" o vacío → '' (para que quede el 0 que pide APPUI)
+function sinNoAplica(val){const s=String(val||'').trim();return /^(n\s*\/?\s*a|no\s+aplica|ningun[oa]?|-+)$/i.test(s)?'':s;}
+// Deja solo los códigos BPIN (10 o más dígitos), separados por coma y sin espacios; si no hay, 0
+function codigosBPIN(val){const c=String(val||'').match(/\d{10,}/g);return c?c.join(','):'0';}
 function plazoADias(val){if(!val)return'0';const s=String(val).trim();let m=s.match(/(\d+)\s*[Mm]es/i);if(m)return String(parseInt(m[1])*30);m=s.match(/(\d+)\s*[Dd]ia/i);if(m)return m[1];if(/^\d+$/.test(s))return s;return'0';}
 function clean(v){const s=String(v||'').trim();return(s==='nan'||s==='NaN'||s==='undefined')?'':s;}
 function log(msg,tipo=''){const box=document.getElementById('log-box');const line=document.createElement('div');line.className='log-line '+tipo;line.textContent='› '+msg;box.appendChild(line);box.scrollTop=box.scrollHeight;}
@@ -819,6 +839,7 @@ async function procesar() {
       // Es del mes si se firmó O inició en ese mes (los recién firmados aún no tienen fecha de inicio)
       const fi=normFecha(row['fecha_de_inicio_del_contrato']||row['Fecha de Inicio del Contrato']||'');
       const ff=normFecha(row['fecha_de_firma']||row['Fecha de Firma']||'');
+      if(!ff||parseInt(ff.split('-')[0])!==anioFiltro)return false; // firmado en otro año: no va en este reporte
       return enMes(fi)||enMes(ff);
     }
     return true;
@@ -892,6 +913,11 @@ async function procesar() {
     let ft=normFecha(fechaFin);if(!ft)ft='1900-01-01';
     // SECOP solo trae la fecha LÍMITE para liquidar, no la del acta: se usa únicamente si el contrato ya está liquidado
     let fl=estadoNum==='3'?normFecha(fechaLiq):'';if(!fl)fl='1800-01-01';
+    // Adiciones y prórrogas salen del Sheet: "ADICION VALOR" trae la plata y "PRORROGA" el tiempo (ej. "1 mes 15 dias")
+    const adicValor=soloPesos(r('ADICION VALOR'));
+    const hayAdicion=!!(adicValor||sinNoAplica(r('FECHA DE LA ADICION')));
+    const prorrogaTxt=sinNoAplica(r('PRORROGA')).replace(/^0+$/,'');
+    const prorrogaDias=textoADias(prorrogaTxt);
     const sectorial=r('SECTORIAL').toUpperCase();
     const sectorNum=mapear(sectorial,SECTOR_MAP)||'';
     if(sectorNum)sectorCount[sectorNum]=(sectorCount[sectorNum]||0)+1;
@@ -907,7 +933,7 @@ async function procesar() {
       esConvenioInterAdministrativo:esConvenio?'SI':'NO',
       numeroContratoInternoConvenio:esConvenio?(r('N° PROCESO DE CONTRATACIÓN')||'0'):'0',
       ordenEntidadContratista:'4',
-      proyectos:r('NUMERO CODIGO BPIN')||'0',
+      proyectos:codigosBPIN(r('NUMERO CODIGO BPIN')),
       sectorContrato:sectorNum,
       tipoIdentificacionContratista:mapear(tipoDoc,TIPO_DOC_MAP)||'1',
       identificacionContratista:nit,
@@ -919,10 +945,10 @@ async function procesar() {
       objetoContrato:objeto,
       fechaInicioContrato:fechaInicio,
       plazoContrato:plazoADias(duracion),
-      numeroAdiciones:r('ADICION VALOR')||'0',
-      valorTotalAdiciones:'0', // antes ponía los DÍAS adicionados de SECOP (no es plata); SECOP no trae el valor de las adiciones
-      numeroProrrogas:r('PRORROGA')||'0',
-      tiempoProrrogas:r('TIEMPO DE EJECUCION TOTAL')||'0',
+      numeroAdiciones:hayAdicion?'1':'0',
+      valorTotalAdiciones:adicValor||'0',
+      numeroProrrogas:prorrogaTxt?'1':'0',
+      tiempoProrrogas:String(prorrogaDias),
       numeroSuspenciones:'0',
       tiempoSuspenciones:'0',
       fechaTerminaContrato:ft,
@@ -934,13 +960,14 @@ async function procesar() {
       valorTotalPropios:propios||'0',
       valorTotalPgn:pgn||'0',
       valorTotalOtros:credito||'0',
-      nroPoliza:r('NUMERO DE POLIZAS')||'0',
+      nroPoliza:sinNoAplica(r('NUMERO DE POLIZAS'))||'0',
       observaciones:'',
     };
     fila._esNuevo=esNuevo;
     fila._tieneCruce=Object.keys(req).length>0;
     fila._cruceDudoso=cruceDudoso;
-    fila._requiereAtencion=!fila.sectorContrato||!fila.idContrato||!fila.fechaInicioContrato||!fila.fechaFirmaContrato||cruceDudoso||!mapear(tipoDoc,TIPO_DOC_MAP);
+    fila._requiereAtencion=!fila.sectorContrato||!fila.idContrato||!fila.fechaInicioContrato||!fila.fechaFirmaContrato||cruceDudoso||!mapear(tipoDoc,TIPO_DOC_MAP)
+      ||(!!prorrogaTxt&&!prorrogaDias)||(hayAdicion&&!adicValor); // prórroga o adición que no se pudo leer
     if(!fila.sectorContrato||!fila.idContrato)filasManual++;
     const tieneVacio=Object.entries(fila).filter(([k])=>!k.startsWith('_')).some(([k,v])=>!v&&k!=='lineaProyecto'&&k!=='observaciones'&&k!=='fechaPagoAnticipo');
     if(tieneVacio)filasVacias++;
