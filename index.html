@@ -152,7 +152,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
 <div class="header">
   <div class="header-icon">📋</div>
   <div><h1>APPUI Procesador</h1><span>Gobernación de La Guajira — DIARI / Contraloría General</span></div>
-  <div class="badge">v5.8 · 2026</div>
+  <div class="badge">v5.9 · 2026</div>
 </div>
 
 <div class="main">
@@ -773,6 +773,15 @@ function fechaCoincide(txt,iso){
   const a=m[1].padStart(2,'0'), b=m[2].padStart(2,'0');
   return iso===`${m[3]}-${b}-${a}`||iso===`${m[3]}-${a}-${b}`;
 }
+// Código como lo exige APPUI: solo letras, números y guion, sin espacios. "CONTRATO INTER 001 DEL 2026" → "CONTRATO-INTER-001-DEL-2026"
+function codigoAPPUI(val){
+  return String(val||'').normalize('NFD').replace(/[^\x00-\x7F]/g,'').trim().replace(/\s+/g,'-').replace(/[^A-Za-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+}
+// Varios códigos en una celda como los exige APPUI: separados por coma y sin espacios. "3 - 57" → "3,57" · "85-44-1 y 85-40-2" → "85-44-1,85-40-2"
+function listaAPPUI(val){
+  const partes=String(val||'').normalize('NFD').replace(/[^\x00-\x7F]/g,'').match(/[A-Za-z0-9-]*\d[A-Za-z0-9-]*/g)||[];
+  return partes.map(p=>p.replace(/^-+|-+$/g,'')).filter(Boolean).join(',');
+}
 // "N/A", "NO APLICA" o vacío → '' (para que quede el 0 que pide APPUI)
 function sinNoAplica(val){const s=String(val||'').trim();return /^(n\s*\/?\s*a|no\s+aplica|ningun[oa]?|-+)$/i.test(s)?'':s;}
 // Deja solo los códigos BPIN (10 o más dígitos), separados por coma y sin espacios; si no hay, 0
@@ -885,7 +894,7 @@ async function procesar() {
 
   const resultado=[];
   const sectorCount={};
-  let filasManual=0,filasVacias=0,crucesDudosos=0;
+  let filasManual=0,filasVacias=0,crucesDudosos=0,sinFechaInicio=0;
   // Para rescatar contratos cuyo ID SECOP en el Sheet es otro (el del borrador, o mal digitado)
   const idsDescarga=new Set(daRows.map(x=>clean(x['id_contrato']||x['ID Contrato']||'').toUpperCase()));
   const filasRescate=new Set(), rescatados=[];
@@ -987,30 +996,38 @@ async function procesar() {
     const prorrogaDias=textoADias(prorrogaTxt);
     const sectorial=r('SECTORIAL').toUpperCase();
     const sectorNum=mapear(sectorial,SECTOR_MAP)||'';
-    if(sectorNum)sectorCount[sectorNum]=(sectorCount[sectorNum]||0)+1;
+    // APPUI no acepta casillas vacías. Si el Sheet no trae el dato se pone un valor provisional y la fila queda para revisar:
+    // número interno = el ID de SECOP con guiones, sector = 16 (Otro), fecha de inicio = 1900-01-01.
+    const internoSheet=codigoAPPUI(r('No CONTRATO INTERNO'));
+    const idProvisional=!internoSheet, sectorProvisional=!sectorNum, sinInicio=!fechaInicio;
+    if(sinInicio)sinFechaInicio++;
+    const sectorFinal=sectorNum||'16';
+    sectorCount[sectorFinal]=(sectorCount[sectorFinal]||0)+1;
+    // Si SECOP no trae el documento del contratista (consorcios), se toma el del Sheet sin dígito de verificación
+    const docSheet=r('IDENTIFICACION').replace(/-\d$/,'').replace(/[^0-9]/g,'');
 
     const fila={
-      idContrato:r('No CONTRATO INTERNO'),
-      lineaProyecto:'',
+      idContrato:internoSheet||codigoAPPUI(secop),
+      lineaProyecto:'NO APLICA',
       publicaSecop:'SI',
       idContratoSecop:secop,
       tipoContrato,
       modalidad:mapear(modalidad,MODALIDAD_MAP)||'13',
       interventoria:'0',
       esConvenioInterAdministrativo:esConvenio?'SI':'NO',
-      numeroContratoInternoConvenio:esConvenio?(r('N° PROCESO DE CONTRATACIÓN')||'0'):'0',
+      numeroContratoInternoConvenio:esConvenio?(codigoAPPUI(r('N° PROCESO DE CONTRATACIÓN'))||'0'):'0',
       ordenEntidadContratista:'4',
       proyectos:codigosBPIN(r('NUMERO CODIGO BPIN')),
-      sectorContrato:sectorNum,
+      sectorContrato:sectorFinal,
       tipoIdentificacionContratista:mapear(tipoDoc,TIPO_DOC_MAP)||'1',
-      identificacionContratista:nit,
+      identificacionContratista:nit||docSheet,
       nombreContratista:nombreC,
       anticipoContrato:anticipo?'SI':'NO',
       valorPagadoAnticipo:amortizado||'0',
-      fechaPagoAnticipo:anticipo?fechaInicio:'',
+      fechaPagoAnticipo:(anticipo&&fechaInicio)?fechaInicio:'1900-01-01', // APPUI: si no aplica, 1900-01-01
       fechaFirmaContrato:fechaFirma,
       objetoContrato:objeto,
-      fechaInicioContrato:fechaInicio,
+      fechaInicioContrato:fechaInicio||'1900-01-01', // APPUI: si no hay dato, 1900-01-01
       plazoContrato:plazoADias(duracion),
       numeroAdiciones:hayAdicion?'1':'0',
       valorTotalAdiciones:adicValor||'0',
@@ -1021,22 +1038,24 @@ async function procesar() {
       fechaTerminaContrato:ft,
       fechaActaLiquidacion:fl,
       estadoContrato:estadoNum,
-      compromisos:r('No CDP')||'0',
+      compromisos:listaAPPUI(r('No CDP'))||'0',
       valorTotalSGP:sgp||'0',
       valorTotalSGR:sgr||'0',
       valorTotalPropios:propios||'0',
       valorTotalPgn:pgn||'0',
       valorTotalOtros:credito||'0',
-      nroPoliza:sinNoAplica(r('NUMERO DE POLIZAS'))||'0',
-      observaciones:'',
+      nroPoliza:listaAPPUI(sinNoAplica(r('NUMERO DE POLIZAS')))||'N/A', // APPUI: si no aplica, N/A
+      observaciones:'Ninguna',
     };
+    fila._idProvisional=idProvisional;
+    fila._sectorProvisional=sectorProvisional;
     fila._esNuevo=esNuevo;
     fila._tieneCruce=Object.keys(req).length>0;
     fila._cruceDudoso=cruceDudoso;
     fila._cruceRescatado=cruceRescatado;
-    fila._requiereAtencion=!fila.sectorContrato||!fila.idContrato||!fila.fechaInicioContrato||!fila.fechaFirmaContrato||cruceDudoso||cruceRescatado||!mapear(tipoDoc,TIPO_DOC_MAP)
+    fila._requiereAtencion=sectorProvisional||idProvisional||!fila.identificacionContratista||!fila.fechaFirmaContrato||cruceDudoso||cruceRescatado||!mapear(tipoDoc,TIPO_DOC_MAP)
       ||(!!prorrogaTxt&&!prorrogaDias)||(hayAdicion&&!adicValor); // prórroga o adición que no se pudo leer
-    if(!fila.sectorContrato||!fila.idContrato)filasManual++;
+    if(sectorProvisional||idProvisional)filasManual++;
     const tieneVacio=Object.entries(fila).filter(([k])=>!k.startsWith('_')).some(([k,v])=>!v&&k!=='lineaProyecto'&&k!=='observaciones'&&k!=='fechaPagoAnticipo');
     if(tieneVacio)filasVacias++;
     resultado.push(fila);
@@ -1106,7 +1125,8 @@ async function procesar() {
   setProgress(100,'✓ Completado');
   log(`✓ ${resultado.length} contratos procesados`,'ok');
   log(`✓ ${reporteNuevos.length} contratos nuevos`,'ok');
-  if(filasManual>0)log(`⚠ ${filasManual} filas necesitan sector o número de contrato`,'warn');
+  if(filasManual>0)log(`⚠ ${filasManual} filas no tienen sector o número interno en el Sheet: van con valor provisional (número de SECOP y sector 16) y están en "Requieren atención"`,'warn');
+  if(sinFechaInicio>0)log(`${sinFechaInicio} contratos todavía no tienen fecha de inicio en SECOP: van con 1900-01-01, como pide APPUI`,'ok');
   document.getElementById('step4').classList.add('active');
   document.getElementById('results').style.display='block';
   document.getElementById('btn-process').disabled=false;
@@ -1119,21 +1139,42 @@ async function procesar() {
   document.getElementById('results').scrollIntoView({behavior:'smooth'});
 }
 
+// Reglas del validador de APPUI (diccionario de la Contraloría), para avisar antes de subir el archivo
+const REGLAS_APPUI=(()=>{
+  const fecha=v=>/^\d{4}-\d{2}-\d{2}$/.test(v), entero=v=>/^\d+$/.test(v), decimal=v=>/^\d+(\.\d+)?$/.test(v);
+  const codigo=v=>/^[A-Za-z0-9-]+$/.test(v), lista=v=>/^[A-Za-z0-9-]+(,[A-Za-z0-9-]+)*$/.test(v), siNo=v=>v==='SI'||v==='NO';
+  return{
+    idContrato:codigo, lineaProyecto:v=>/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+$/.test(v), publicaSecop:siNo, idContratoSecop:v=>/^[A-Za-z0-9.]+$/.test(v)||v==='N/A',
+    tipoContrato:v=>v!=='', modalidad:v=>['1','2','3','6','7','10','11','13'].includes(v), interventoria:v=>/^[A-Za-z0-9.]+$/.test(v),
+    esConvenioInterAdministrativo:v=>['SI','NO','DERIVADO'].includes(v), numeroContratoInternoConvenio:codigo, ordenEntidadContratista:v=>['1','2','3','4'].includes(v),
+    proyectos:lista, sectorContrato:v=>entero(v)&&+v>=1&&+v<=16, tipoIdentificacionContratista:v=>entero(v)&&+v>=1&&+v<=14,
+    identificacionContratista:v=>v!=='', nombreContratista:v=>v!==''&&v.length<=255, anticipoContrato:siNo, valorPagadoAnticipo:decimal,
+    fechaPagoAnticipo:fecha, fechaFirmaContrato:fecha, objetoContrato:v=>v!==''&&v.length<=3000, fechaInicioContrato:fecha,
+    plazoContrato:entero, numeroAdiciones:entero, valorTotalAdiciones:decimal, numeroProrrogas:entero, tiempoProrrogas:entero, numeroSuspenciones:entero, tiempoSuspenciones:entero,
+    fechaTerminaContrato:fecha, fechaActaLiquidacion:fecha, estadoContrato:v=>entero(v)&&+v>=1&&+v<=7, compromisos:lista,
+    valorTotalSGP:decimal, valorTotalSGR:decimal, valorTotalPropios:decimal, valorTotalPgn:decimal, valorTotalOtros:decimal,
+    nroPoliza:v=>v==='N/A'||lista(v), observaciones:v=>v!==''&&v.length<=3000,
+  };
+})();
 function validarCSV(data){
   const err=[];
-  const obl=['idContratoSecop','tipoContrato','modalidad','identificacionContratista','nombreContratista','fechaFirmaContrato','estadoContrato'];
   data.forEach((f,i)=>{
-    for(const c of obl){if(!f[c])err.push(`Fila ${i+1}: ${c} vacío`);}
-    ['objetoContrato','nombreContratista'].forEach(c=>{if(f[c]&&String(f[c]).includes('|'))err.push(`Fila ${i+1}: ${c} tiene "|"`);});
+    const l=limpiarParaCSV(f); // se valida lo mismo que va al archivo
+    for(const[c,regla]of Object.entries(REGLAS_APPUI)){if(!regla(l[c]===undefined?'':l[c]))err.push(`Fila ${i+1} (${f.idContratoSecop}): ${c} ${l[c]?'no cumple el formato de APPUI':'vacío'}`);}
   });
   return err;
 }
 function mostrarValidacion(errores){
   const b=document.getElementById('val-banner');
   b.style.display='block';
-  if(errores.length===0){b.className='val-banner ok';b.textContent='✓ Sin errores críticos — CSV listo para subir a APPUI.';}
-  else if(errores.length<15){b.className='val-banner warn';b.innerHTML=`⚠ ${errores.length} advertencias:<br>`+errores.slice(0,6).join('<br>')+(errores.length>6?`<br>...y ${errores.length-6} más`:'');}
-  else{b.className='val-banner err';b.textContent=`✗ ${errores.length} campos obligatorios vacíos. Revisa "Requieren atención" antes de subir a APPUI.`;}
+  if(errores.length===0){b.className='val-banner ok';b.textContent='✓ Todas las casillas cumplen las reglas de APPUI — CSV listo para subir.';}
+  else{
+    // Con nodos de texto (no innerHTML): los mensajes traen datos de SECOP y del Sheet
+    b.className='val-banner '+(errores.length<15?'warn':'err');b.textContent='';
+    b.appendChild(document.createTextNode(`${errores.length<15?'⚠':'✗'} ${errores.length} casillas que APPUI va a rechazar:`));
+    errores.slice(0,8).forEach(m=>{b.appendChild(document.createElement('br'));b.appendChild(document.createTextNode(m));});
+    if(errores.length>8){b.appendChild(document.createElement('br'));b.appendChild(document.createTextNode(`...y ${errores.length-8} más`));}
+  }
 }
 function renderSectorGrid(counts){
   const g=document.getElementById('sector-grid');
@@ -1186,10 +1227,11 @@ function renderTabla(data,filtered=false){
   document.getElementById('preview-body').innerHTML=filas.map(row=>
     `<tr class="${row._esNuevo?'nuevo-row':''}" data-id="${row._id}">`+cols.map(col=>{
       const v=row[col];
-      const isManual=col==='lineaProyecto'||col==='observaciones';
+      // Amarillo y editable: las casillas de texto libre y los valores provisionales (número interno y sector que no están en el Sheet)
+      const isManual=col==='lineaProyecto'||col==='observaciones'||(col==='idContrato'&&row._idProvisional)||(col==='sectorContrato'&&row._sectorProvisional);
       const isEmpty=!v&&col!=='lineaProyecto'&&col!=='observaciones'&&col!=='fechaPagoAnticipo';
       const cls=isEmpty?'empty':isManual?'manual':'ok';
-      const display=isManual?'AGREGAR MANUALMENTE':(v||'—');
+      const display=v||(isManual?'AGREGAR MANUALMENTE':'—');
       const ed=(isManual||isEmpty)?'contenteditable="true"':'';
       return`<td class="${cls}" title="${String(v||'')}" ${ed} onblur="editarCelda(this,'${col}')">${display}</td>`;
     }).join('')+'</tr>'
@@ -1201,7 +1243,12 @@ function editarCelda(el,col){
   if(val==='AGREGAR MANUALMENTE'||val==='—')return;
   // La fila se busca por su identificador, no por la posición en pantalla (que cambia al buscar u ordenar)
   const fila=reporteCompleto[parseInt(el.closest('tr').dataset.id)];
-  if(fila){fila[col]=val;el.className=val?'ok':'empty';el.removeAttribute('contenteditable');}
+  if(fila){
+    fila[col]=val;el.className=val?'ok':'empty';el.removeAttribute('contenteditable');
+    // Si corrigió a mano un valor provisional, deja de ser provisional
+    if(col==='idContrato')fila._idProvisional=false;
+    if(col==='sectorContrato')fila._sectorProvisional=false;
+  }
 }
 function limpiarParaCSV(fila){
   const out={};
