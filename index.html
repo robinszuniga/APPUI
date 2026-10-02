@@ -152,7 +152,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
 <div class="header">
   <div class="header-icon">📋</div>
   <div><h1>APPUI Procesador</h1><span>Gobernación de La Guajira — DIARI / Contraloría General</span></div>
-  <div class="badge">v5.4 · 2026</div>
+  <div class="badge">v5.5 · 2026</div>
 </div>
 
 <div class="main">
@@ -243,6 +243,19 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
     <input type="file" id="file-prev" accept=".xlsx" onchange="loadPrev(event)">
   </label>
 
+  <!-- Pendientes SECOP II opcional (Excel del robot: contratos que aún no están en datos abiertos) -->
+  <label class="upload-card" id="card-pend" for="file-pend"
+    ondragover="dragOverPend(event)" ondragleave="dragLeavePend()" ondrop="dropPend(event)" style="margin-bottom:18px;cursor:pointer;">
+    <span class="opt-badge">OPCIONAL</span>
+    <div style="font-size:22px">🕒</div>
+    <div>
+      <div style="font-size:12px;font-weight:600">Pendientes SECOP II</div>
+      <div style="font-size:10px;color:var(--muted);font-family:var(--mono)">Sube el Excel del robot (pendientes_secop.xlsx) para ver los contratos que aún no están en datos abiertos — arrastra o haz clic</div>
+      <div style="font-size:10px;color:var(--green);font-family:var(--mono);margin-top:4px" id="name-pend"></div>
+    </div>
+    <input type="file" id="file-pend" accept=".xlsx" onchange="loadPend(event)">
+  </label>
+
   <!-- Opciones -->
   <div class="options-row">
     <span class="opt-label">Reporte:</span>
@@ -297,6 +310,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
       <div class="stat-card yellow"><div class="stat-num" id="stat-manual">0</div><div class="stat-label">Incompletos</div></div>
       <div class="stat-card red"><div class="stat-num" id="stat-vacios">0</div><div class="stat-label">Con vacíos</div></div>
       <div class="stat-card amber"><div class="stat-num" id="stat-excluidos">0</div><div class="stat-label">Excluidos riesgo</div></div>
+      <div class="stat-card blue" id="card-stat-pend" style="display:none"><div class="stat-num" id="stat-pend">0</div><div class="stat-label">Pendientes SECOP II</div></div>
     </div>
     <div class="section-title">Distribución por sector</div>
     <div class="sector-grid" id="sector-grid"></div>
@@ -327,6 +341,15 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
       <div class="table-wrap"><table><thead id="preview-head"></thead><tbody id="preview-body"></tbody></table></div>
       <button class="icon-btn" id="btn-show-all" onclick="mostrarTodos()" style="display:none;width:100%;padding:10px;margin:8px 0;border-radius:0 0 10px 10px;"></button>
     </div>
+
+    <!-- Pendientes SECOP II: solo se ve si se cargó el Excel del robot. No entran al CSV de APPUI. -->
+    <div id="pend-wrap" style="display:none;margin-top:26px;">
+      <div class="section-title">Nuevos que aún no están en datos abiertos <span id="cnt-pend"></span></div>
+      <div class="val-banner warn" id="pend-nota" style="display:block"></div>
+      <div class="preview-wrap">
+        <div class="table-wrap"><table><thead id="pend-head"></thead><tbody id="pend-body"></tbody></table></div>
+      </div>
+    </div>
   </div>
 
 </div><!-- /main -->
@@ -339,6 +362,8 @@ let reporteCompleto=[],reporteNuevos=[],reporteAtencion=[];
 let tipoReporte='todos', tabActual='todos';
 let _mostrarTodos=false, _mesReporte='', _errorProceso='', _unClicEnCurso=false;
 let _acumulado=false; // true = el reporte de un clic va desde enero hasta el mes elegido
+let pendData=null, reportePendientes=[]; // Excel de pendientes del robot (opcional) y los que siguen sin salir en datos abiertos
+const COLS_PEND=['ID Contrato','Proveedor','Proceso de Contratación','Valor','Tipo de contrato','Fecha del estado','Estado','Unidad de contratación','Consultado el'];
 
 // ─── Mappings ─────────────────────────────────────────────
 const MODALIDAD_MAP={'LICITACIÓN PÚBLICA':1,'LICITACION PUBLICA':1,'LICITACION':1,'CONCURSO DE MÉRITOS':2,'CONCURSO DE MERITOS':2,'CONCURSO':2,'SELECCIÓN ABREVIADA':3,'SELECCION ABREVIADA':3,'MENOR CUANTÍA':3,'MENOR CUANTIA':3,'MÍNIMA CUANTÍA':6,'MINIMA CUANTIA':6,'CONTRATACIÓN DIRECTA':7,'CONTRATACION DIRECTA':7,'DIRECTA':7,'CONTRATACIÓN PRIVADA':10,'CONTRATACION PRIVADA':10,'RÉGIMEN ESPECIAL':11,'REGIMEN ESPECIAL':11};
@@ -558,6 +583,107 @@ function procesarPrev(f){
     }catch(err){alert('Error al leer el archivo: '+err.message);}
   };
   reader.readAsBinaryString(f);
+}
+
+// ─── Pendientes SECOP II (opcional) ───────────────────────
+// Excel del robot con los contratos que la cuenta de SECOP II ya muestra pero datos abiertos todavía no.
+// Solo se muestran aparte; nunca entran al CSV de 39 columnas.
+function dragOverPend(e){e.preventDefault();document.getElementById('card-pend').classList.add('drag-over');}
+function dragLeavePend(){document.getElementById('card-pend').classList.remove('drag-over');}
+function dropPend(e){e.preventDefault();dragLeavePend();const f=e.dataTransfer.files[0];if(f)procesarPend(f);}
+function loadPend(e){const f=e.target.files[0];if(f)procesarPend(f);}
+function procesarPend(f){
+  const info=document.getElementById('name-pend');
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const ws=wb.Sheets['Pendientes'];
+      if(!ws)throw new Error('el archivo no tiene la hoja "Pendientes"');
+      const filas=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      const cab=(filas[0]||[]).map(h=>String(h).trim());
+      if(!cab.includes('ID Contrato'))throw new Error('la hoja "Pendientes" no tiene la columna "ID Contrato"');
+      const rows=filas.slice(1).map(v=>{const o={};cab.forEach((h,i)=>{o[h]=v[i]===undefined?'':v[i];});return o;})
+        .filter(o=>clean(o['ID Contrato']));
+      pendData={rows,archivo:f.name};
+      document.getElementById('card-pend').classList.add('uploaded');
+      info.style.color='var(--green)';
+      info.textContent=`✓ ${f.name} · ${rows.length} pendientes — se mostrarán al generar el reporte`;
+    }catch(err){
+      pendData=null;
+      document.getElementById('card-pend').classList.remove('uploaded');
+      info.style.color='var(--red)';
+      info.textContent='✗ No se pudo leer: '+err.message;
+    }
+  };
+  reader.readAsArrayBuffer(f);
+}
+// Pregunta a datos abiertos cuáles de esos contratos ya aparecen (por número, sin importar la fecha)
+async function idsEnDatosAbiertos(ids){
+  const validos=ids.filter(id=>/^CO1\.PCCNTR\.\d+$/.test(id));
+  const hallados=new Set();
+  for(let i=0;i<validos.length;i+=100){
+    const where=`id_contrato in (${validos.slice(i,i+100).map(id=>`'${id}'`).join(',')})`;
+    const resp=await fetch(`https://www.datos.gov.co/resource/jbjy-vk9h.json?$select=id_contrato&$where=${encodeURIComponent(where)}&$limit=1000`);
+    if(!resp.ok)throw new Error(`HTTP ${resp.status}`);
+    (await resp.json()).forEach(r=>hallados.add(clean(r.id_contrato).toUpperCase()));
+  }
+  return hallados;
+}
+// Deja en reportePendientes los que todavía no están en datos abiertos, con el número interno y el sectorial del Sheet
+async function calcularPendientes(daRows,reqSecop,secopRiesgo){
+  reportePendientes=[];
+  if(!pendData)return;
+  const enDescarga=new Set(daRows.map(r=>clean(r['id_contrato']||r['ID Contrato']||'').toUpperCase()));
+  const vistos=new Set();
+  let candidatos=pendData.rows.filter(p=>{
+    const id=clean(p['ID Contrato']).toUpperCase();
+    if(vistos.has(id))return false;vistos.add(id);
+    return !enDescarga.has(id);
+  });
+  const yaEnDescarga=vistos.size-candidatos.length;
+  let yaEnAPI=0;
+  try{
+    const hallados=await idsEnDatosAbiertos(candidatos.map(p=>clean(p['ID Contrato']).toUpperCase()));
+    const antes=candidatos.length;
+    candidatos=candidatos.filter(p=>!hallados.has(clean(p['ID Contrato']).toUpperCase()));
+    yaEnAPI=antes-candidatos.length;
+  }catch(err){
+    log('⚠ Pendientes SECOP II: no se pudo confirmar contra datos abiertos ('+err.message+'); se comparó solo con lo descargado','warn');
+  }
+  reportePendientes=candidatos.map(p=>{
+    const id=clean(p['ID Contrato']).toUpperCase();
+    const req=reqSecop[id]||{};
+    const fila={};
+    COLS_PEND.forEach(c=>{fila[c]=clean(p[c]);});
+    fila['No CONTRATO INTERNO']=clean(req['No CONTRATO INTERNO']);
+    fila['SECTORIAL']=clean(req['SECTORIAL']);
+    fila['Nota']=secopRiesgo.has(id)?'Supervisor de riesgo: se excluirá del reporte':'';
+    return fila;
+  });
+  log(`Pendientes SECOP II: ${vistos.size} en el archivo · ${yaEnDescarga+yaEnAPI} ya están en datos abiertos · ${reportePendientes.length} siguen pendientes`,'ok');
+}
+function mostrarPendientes(){
+  const wrap=document.getElementById('pend-wrap'), card=document.getElementById('card-stat-pend');
+  const fila=document.querySelector('.stats-row');
+  if(!pendData){wrap.style.display='none';card.style.display='none';if(fila)fila.style.gridTemplateColumns='';return;}
+  wrap.style.display='block';card.style.display='';if(fila)fila.style.gridTemplateColumns='repeat(6,1fr)';
+  document.getElementById('stat-pend').textContent=reportePendientes.length;
+  document.getElementById('cnt-pend').textContent=`(${reportePendientes.length})`;
+  document.getElementById('pend-nota').textContent=reportePendientes.length
+    ?`Estos ${reportePendientes.length} contratos ya están en la cuenta de SECOP II pero todavía no salen en datos abiertos. NO van en el CSV para APPUI (les faltan datos); entrarán solos cuando datos abiertos se ponga al día. Archivo: ${pendData.archivo}.`
+    :`Todos los contratos del archivo ${pendData.archivo} ya están en datos abiertos. No hay pendientes.`;
+  const cols=reportePendientes.length?Object.keys(reportePendientes[0]):[];
+  const head=document.getElementById('pend-head'), body=document.getElementById('pend-body');
+  head.textContent='';body.textContent='';
+  const trh=document.createElement('tr');
+  cols.forEach(c=>{const th=document.createElement('th');th.textContent=c;th.style.cursor='default';trh.appendChild(th);});
+  head.appendChild(trh);
+  reportePendientes.forEach(p=>{
+    const tr=document.createElement('tr');
+    cols.forEach(c=>{const td=document.createElement('td');td.className='ok';td.textContent=p[c]||'—';td.title=p[c]||'';tr.appendChild(td);});
+    body.appendChild(tr);
+  });
 }
 
 function setTipo(t){
@@ -852,6 +978,10 @@ async function procesar() {
   }
   window._reporteModificados=reporteModificados;
 
+  // Pendientes SECOP II (opcional): no tocan el reporte ni el CSV, solo se muestran aparte
+  await calcularPendientes(daRows,reqSecop,secopRiesgo);
+  mostrarPendientes();
+
   // Alerta contratos sin cruzar
   const sinCruzar=resultado.filter(r=>!r._tieneCruce);
   if(sinCruzar.length>0){
@@ -1038,7 +1168,8 @@ async function reporteMesUnClic(){
     descargarCSV('completo');
     setSourceInfo('unclic',
       `✓ Descargado: ${reporteCompleto.length} contratos de ${periodo}`+
-      (reporteAtencion.length?` · ${reporteAtencion.length} requieren atención (míralos abajo antes de subir a APPUI)`:' · todo completo'),'ok');
+      (reporteAtencion.length?` · ${reporteAtencion.length} requieren atención (míralos abajo antes de subir a APPUI)`:' · todo completo')+
+      (pendData?` · ${reportePendientes.length} pendientes en SECOP II (no van en el archivo)`:''),'ok');
     if(reporteAtencion.length)document.getElementById('info-unclic').style.color='var(--yellow)';
   }catch(err){
     setSourceInfo('unclic','✗ '+err.message,'err');
@@ -1058,7 +1189,16 @@ function descargarExcel(){
     ws['!cols']=cols.map(c=>({wch:c==='objetoContrato'||c==='nombreContratista'?40:16}));
     XLSX.utils.book_append_sheet(wb,ws,nombre);
   });
-  const ws4=XLSX.utils.json_to_sheet([{campo:'Total',valor:reporteCompleto.length},{campo:'Nuevos',valor:reporteNuevos.length},{campo:'Atención',valor:reporteAtencion.length},{campo:'Fecha',valor:new Date().toLocaleDateString('es-CO')}]);
+  const resumen=[{campo:'Total',valor:reporteCompleto.length},{campo:'Nuevos',valor:reporteNuevos.length},{campo:'Atención',valor:reporteAtencion.length},{campo:'Fecha',valor:new Date().toLocaleDateString('es-CO')}];
+  if(pendData){
+    // Hoja aparte con los contratos que aún no están en datos abiertos (solo si se cargó el Excel del robot)
+    const colsP=[...COLS_PEND,'No CONTRATO INTERNO','SECTORIAL','Nota'];
+    const wsP=XLSX.utils.json_to_sheet(reportePendientes,{header:colsP});
+    wsP['!cols']=colsP.map(c=>({wch:c==='Proveedor'||c==='Proceso de Contratación'||c==='Nota'?36:20}));
+    XLSX.utils.book_append_sheet(wb,wsP,'Pendientes SECOP');
+    resumen.push({campo:'Pendientes SECOP II',valor:reportePendientes.length});
+  }
+  const ws4=XLSX.utils.json_to_sheet(resumen);
   XLSX.utils.book_append_sheet(wb,ws4,'Resumen');
   const entidad=document.getElementById('cfg-entidad').value||'CONTRATACION';
   XLSX.writeFile(wb,`${entidad}_APPUI_REVISION_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`);
