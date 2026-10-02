@@ -152,7 +152,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
 <div class="header">
   <div class="header-icon">📋</div>
   <div><h1>APPUI Procesador</h1><span>Gobernación de La Guajira — DIARI / Contraloría General</span></div>
-  <div class="badge">v5.3 · 2026</div>
+  <div class="badge">v5.4 · 2026</div>
 </div>
 
 <div class="main">
@@ -208,6 +208,26 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
       </div>
       <div class="source-info" id="info-api" style="display:none"></div>
     </div>
+  </div>
+
+  <!-- Reporte del mes en un clic -->
+  <div class="source-card" id="card-unclic" style="margin-bottom:18px;border-color:rgba(240,165,0,0.35);">
+    <div class="source-header">
+      <div class="source-icon" style="background:rgba(240,165,0,0.15);">⚡</div>
+      <div>
+        <div class="source-title">Reporte en un clic</div>
+        <div class="source-sub">Contratos firmados o iniciados en el periodo · descarga el CSV listo para APPUI</div>
+      </div>
+    </div>
+    <div class="input-row" style="flex-wrap:wrap;">
+      <select id="unclic-modo" style="flex:0 0 auto;">
+        <option value="acumulado" selected>Acumulado desde enero hasta</option>
+        <option value="mes">Solo el mes de</option>
+      </select>
+      <input type="month" id="unclic-mes" style="flex:0 0 180px;color-scheme:dark;">
+      <button class="process-btn" id="btn-unclic" onclick="reporteMesUnClic()" style="margin-bottom:0;padding:10px;flex:1 1 220px;width:auto;">⚡ Generar y descargar</button>
+    </div>
+    <div class="source-info" id="info-unclic" style="display:none"></div>
   </div>
 
   <!-- Reporte anterior opcional -->
@@ -305,6 +325,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
         <input class="table-search" id="table-search" placeholder="Buscar por nombre, NIT, ID contrato..." oninput="filtrarTabla()">
       </div>
       <div class="table-wrap"><table><thead id="preview-head"></thead><tbody id="preview-body"></tbody></table></div>
+      <button class="icon-btn" id="btn-show-all" onclick="mostrarTodos()" style="display:none;width:100%;padding:10px;margin:8px 0;border-radius:0 0 10px 10px;"></button>
     </div>
   </div>
 
@@ -316,6 +337,8 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
 let sheetsData=null, apiData=null, prevData=null;
 let reporteCompleto=[],reporteNuevos=[],reporteAtencion=[];
 let tipoReporte='todos', tabActual='todos';
+let _mostrarTodos=false, _mesReporte='', _errorProceso='', _unClicEnCurso=false;
+let _acumulado=false; // true = el reporte de un clic va desde enero hasta el mes elegido
 
 // ─── Mappings ─────────────────────────────────────────────
 const MODALIDAD_MAP={'LICITACIÓN PÚBLICA':1,'LICITACION PUBLICA':1,'LICITACION':1,'CONCURSO DE MÉRITOS':2,'CONCURSO DE MERITOS':2,'CONCURSO':2,'SELECCIÓN ABREVIADA':3,'SELECCION ABREVIADA':3,'MENOR CUANTÍA':3,'MENOR CUANTIA':3,'MÍNIMA CUANTÍA':6,'MINIMA CUANTIA':6,'CONTRATACIÓN DIRECTA':7,'CONTRATACION DIRECTA':7,'DIRECTA':7,'CONTRATACIÓN PRIVADA':10,'CONTRATACION PRIVADA':10,'RÉGIMEN ESPECIAL':11,'REGIMEN ESPECIAL':11};
@@ -335,7 +358,25 @@ window.onload = () => {
   // Cargar NIT guardado (o usar el de La Guajira por defecto)
   const savedNit = localStorage.getItem('appui_nit_api');
   if (savedNit) document.getElementById('api-nit').value = savedNit;
+  // Mes anterior por defecto (el que normalmente se reporta)
+  const hoy = new Date();
+  const ant = new Date(hoy.getFullYear(), hoy.getMonth()-1, 1);
+  asegurarAnio(hoy.getFullYear());
+  asegurarAnio(ant.getFullYear());
+  document.getElementById('sel-mes').value = String(ant.getMonth()+1);
+  document.getElementById('sel-anio').value = String(ant.getFullYear());
+  document.getElementById('cfg-vigencia').value = String(ant.getFullYear());
+  document.getElementById('unclic-mes').value = `${ant.getFullYear()}-${String(ant.getMonth()+1).padStart(2,'0')}`;
 };
+
+// Agrega el año al selector si no está (para que no se quede en 2026)
+function asegurarAnio(anio) {
+  const sel = document.getElementById('sel-anio');
+  if ([...sel.options].some(o => o.value === String(anio))) return;
+  const opt = document.createElement('option');
+  opt.value = String(anio); opt.textContent = String(anio);
+  sel.appendChild(opt);
+}
 
 function guardarURL() {
   const url = document.getElementById('sheets-url').value.trim();
@@ -455,16 +496,23 @@ async function verificarAPI() {
   checkReady();
 }
 
-async function cargarDatosAPI(nit, anio, onProgress) {
+async function cargarDatosAPI(nit, anio, onProgress, mes, mesDesde) {
   const LIMIT = 1000;
   let offset = 0, todos = [];
   // Filtrar por NIT y por año de firma para no descargar histórico completo
   const fechaDesde = `${anio}-01-01T00:00:00.000`;
   const fechaHasta = `${anio}-12-31T23:59:59.999`;
+  let where = `nit_entidad='${nit}' AND fecha_de_firma>='${fechaDesde}' AND fecha_de_firma<='${fechaHasta}'`;
+  if (mes) {
+    // Reporte de un periodo: contratos firmados O iniciados entre mesDesde y mes (un solo mes si no se da mesDesde)
+    const mm = String(mes).padStart(2,'0');
+    const ultimoDia = String(new Date(anio, mes, 0).getDate()).padStart(2,'0');
+    const d1 = `${anio}-${String(mesDesde||mes).padStart(2,'0')}-01T00:00:00.000`, d2 = `${anio}-${mm}-${ultimoDia}T23:59:59.999`;
+    where = `nit_entidad='${nit}' AND ((fecha_de_firma>='${d1}' AND fecha_de_firma<='${d2}') OR (fecha_de_inicio_del_contrato>='${d1}' AND fecha_de_inicio_del_contrato<='${d2}'))`;
+  }
   while (true) {
     onProgress(`Descargando contratos desde API... (${todos.length} descargados)`);
-    const where = `nit_entidad='${nit}' AND fecha_de_firma>='${fechaDesde}' AND fecha_de_firma<='${fechaHasta}'`;
-    const url = `https://www.datos.gov.co/resource/jbjy-vk9h.json?$where=${encodeURIComponent(where)}&$limit=${LIMIT}&$offset=${offset}`;
+    const url = `https://www.datos.gov.co/resource/jbjy-vk9h.json?$where=${encodeURIComponent(where)}&$order=id_contrato&$limit=${LIMIT}&$offset=${offset}`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`Error API: HTTP ${resp.status}`);
     const batch = await resp.json();
@@ -570,8 +618,12 @@ async function procesar() {
   document.getElementById('btn-process').disabled=true;
   document.getElementById('log-box').innerHTML='';
   document.getElementById('step3').classList.add('active');
+  _errorProceso='';
   await tick();
 
+  const mesFiltro=tipoReporte==='mes'?parseInt(document.getElementById('sel-mes').value):null;
+  const anioFiltro=tipoReporte==='mes'?parseInt(document.getElementById('sel-anio').value):null;
+  const mesDesde=mesFiltro?(_acumulado?1:mesFiltro):null; // acumulado = desde enero
   const supExcluir=document.getElementById('cfg-supervisores').value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
   const nit = document.getElementById('api-nit').value.trim().replace(/[^0-9]/g,'');
 
@@ -580,9 +632,13 @@ async function procesar() {
   log('Conectando con API de datos.gov.co...','ok');
   let daRows=[];
   try {
-    daRows = await cargarDatosAPI(nit, document.getElementById('cfg-vigencia').value||'2026', msg => log(msg,'ok'));
+    // En "Por mes" se pide a la API solo ese mes (firma o inicio); si no, toda la vigencia
+    daRows = mesFiltro
+      ? await cargarDatosAPI(nit, anioFiltro, msg => log(msg,'ok'), mesFiltro, mesDesde)
+      : await cargarDatosAPI(nit, document.getElementById('cfg-vigencia').value||'2026', msg => log(msg,'ok'));
     log(`✓ ${daRows.length} contratos descargados de SECOP II`,'ok');
   } catch(err) {
+    _errorProceso=err.message;
     log('✗ Error descargando DA: '+err.message,'err');
     document.getElementById('btn-process').disabled=false;
     return;
@@ -592,14 +648,21 @@ async function procesar() {
   setProgress(35,'Procesando Requerimiento desde Sheets...');
   await tick();
   const reqObjs = sheetsToObjects(sheetsData);
-  const reqNit={}, reqSecop={}, secopRiesgo=new Set();
+  // reqSecop: fila del Sheet por ID SECOP (único por contrato).
+  // reqNitLibres: filas del contratista que todavía NO tienen ID SECOP (las que sí lo tienen son de otro contrato).
+  const reqSecop={}, reqNitLibres={}, secopRiesgo=new Set();
   for(const row of reqObjs){
     const nit=clean(row['IDENTIFICACION']).replace(/[^0-9]/g,'');
-    const secop=clean(row['ID DEL CONTRATO SECOP']).toUpperCase();
+    const secopTxt=clean(row['ID DEL CONTRATO SECOP']).toUpperCase();
+    const idSecop=secopTxt.match(/CO1\.PCCNTR\.\d+/);
+    const secop=idSecop?idSecop[0]:secopTxt;
     const sup=clean(row['SUPERVISOR(A)']).toUpperCase();
     const esRiesgo=supExcluir.some(kw=>sup.includes(kw));
     if(esRiesgo){if(secop)secopRiesgo.add(secop);}
-    else{if(nit&&!reqNit[nit])reqNit[nit]=row;if(secop&&!reqSecop[secop])reqSecop[secop]=row;}
+    else{
+      if(secop&&!reqSecop[secop])reqSecop[secop]=row;
+      if(nit&&!idSecop)(reqNitLibres[nit]=reqNitLibres[nit]||[]).push(row);
+    }
   }
   log(`Requerimiento: ${reqObjs.length} registros · ${secopRiesgo.size} de riesgo excluidos`,'ok');
 
@@ -621,27 +684,26 @@ async function procesar() {
   // La API Socrata devuelve los campos en snake_case
   // nit_entidad, id_contrato, nombre_entidad, proveedor_adjudicado, etc.
   // Hacer helper que busca tanto snake_case como el nombre original del Excel
-  const mesFiltro=tipoReporte==='mes'?parseInt(document.getElementById('sel-mes').value):null;
-  const anioFiltro=tipoReporte==='mes'?parseInt(document.getElementById('sel-anio').value):null;
   let excluidos=0;
+  const enMes=f=>{if(!f)return false;const p=f.split('-'),mm=parseInt(p[1]);return mm>=mesDesde&&mm<=mesFiltro&&parseInt(p[0])===anioFiltro;}; // f = YYYY-MM-DD
   const daFiltrado=daRows.filter(row=>{
     const secop=clean(row['id_contrato']||row['ID Contrato']||'').toUpperCase();
     if(secopRiesgo.has(secop)){excluidos++;return false;}
     if(mesFiltro){
-      // La API Socrata devuelve: fecha_de_inicio_del_contrato en ISO "2026-01-26T00:00:00.000"
+      // Es del mes si se firmó O inició en ese mes (los recién firmados aún no tienen fecha de inicio)
       const fi=normFecha(row['fecha_de_inicio_del_contrato']||row['Fecha de Inicio del Contrato']||'');
-      if(!fi)return false;
-      const partes=fi.split('-'); // [YYYY, MM, DD]
-      return parseInt(partes[1])===mesFiltro && parseInt(partes[0])===anioFiltro;
+      const ff=normFecha(row['fecha_de_firma']||row['Fecha de Firma']||'');
+      return enMes(fi)||enMes(ff);
     }
     return true;
   });
-  if(mesFiltro) log(`Filtro: ${mesFiltro}/${anioFiltro} → ${daFiltrado.length} contratos`,'ok');
+  if(mesFiltro) log(`Filtro: ${mesDesde<mesFiltro?mesDesde+' a ':''}${mesFiltro}/${anioFiltro} → ${daFiltrado.length} contratos`,'ok');
   log(`DA filtrado: ${daFiltrado.length} contratos (${excluidos} excluidos)`,'ok');
 
   const resultado=[];
   const sectorCount={};
-  let filasManual=0,filasVacias=0;
+  let filasManual=0,filasVacias=0,crucesDudosos=0;
+  const numRec=v=>{const n=parseFloat(String(v||'').replace(/[^0-9.]/g,''));return isNaN(n)?0:n;};
 
   for(let i=0;i<daFiltrado.length;i++){
     if(i%80===0){setProgress(45+Math.floor((i/daFiltrado.length)*50),`Procesando ${i+1} de ${daFiltrado.length}...`);await tick();}
@@ -656,13 +718,21 @@ async function procesar() {
     const nit=(d('Documento Proveedor')||clean(row['documento_proveedor']||row['nit_del_proveedor']||'')).replace(/[^0-9]/g,'');
     const secop=d('ID Contrato')||clean(row['id_contrato']||'');
     const nitUp=nit.toUpperCase(), secopUp=secop.toUpperCase();
-    const req=reqNit[nitUp]||reqSecop[secopUp]||{};
+    // Cruce con el Sheet: primero por ID SECOP. Por documento solo si el contratista
+    // tiene UNA fila sin ID SECOP; si tiene varias no se adivina (queda para revisión).
+    let req=reqSecop[secopUp], cruceDudoso=false;
+    if(!req){
+      const libres=reqNitLibres[nitUp]||[];
+      if(libres.length===1)req=libres[0];
+      else if(libres.length>1){cruceDudoso=true;crucesDudosos++;}
+    }
+    req=req||{};
     const esNuevo=idsPrev.size>0&&!idsPrev.has(secopUp);
     const r=col=>clean(req[col]||'');
 
     // Helpers para campos comunes de la API
     const getDA=(normal,api)=>clean(row[normal]||row[api]||'');
-    const tipoDoc=getDA('TipoDocProveedor','tipo_de_documento_proveedor');
+    const tipoDoc=getDA('TipoDocProveedor','tipo_de_documento_proveedor')||clean(row['tipodocproveedor']);
     const nombreC=getDA('Proveedor Adjudicado','proveedor_adjudicado');
     const tipoContrato=getDA('Tipo de Contrato','tipo_de_contrato');
     const modalidad=getDA('Modalidad de Contratacion','modalidad_de_contratacion');
@@ -675,18 +745,27 @@ async function procesar() {
     const estadoC=getDA('Estado Contrato','estado_contrato');
     const sgp=buscarRecurso(row,'Sistema General de Participaciones','sistema_general_de_participaciones','sistema_general_de_participaci_n');
     const sgr=buscarRecurso(row,'Sistema General de Regalías','sistema_general_de_regal_as','sistema_general_de_regalias');
-    const propios=buscarRecurso(row,'Recursos Propios (Alcaldías, Gobernaciones y Resguardos Indígenas)','recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas','recursos_propios_alcald','recursos_propios');
+    // SECOP trae los recursos propios en dos columnas; si las dos tienen plata se suman
+    const propAlc=numRec(row['recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas_']||row['recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas']);
+    const propGen=numRec(row['recursos_propios']);
+    const propios=(propAlc>0&&propGen>0)
+      ?String(Math.round((propAlc+propGen)*100)/100)
+      :buscarRecurso(row,'Recursos Propios (Alcaldías, Gobernaciones y Resguardos Indígenas)','recursos_propios_alcald_as_gobernaciones_y_resguardos_ind_genas','recursos_propios_alcald','recursos_propios');
     const pgn=buscarRecurso(row,'Presupuesto General de la Nacion – PGN','presupuesto_general_de_la_nacion_pgn','presupuesto_general_de_la_naci_n_pgn','presupuesto_general');
     const credito=buscarRecurso(row,'Recursos de Credito','recursos_de_credito','recursos_de_cr_dito');
     const anticipo=parseFloat((getDA('Valor de pago adelantado','valor_de_pago_adelantado')||'0').replace(/[^0-9.]/g,''))>0;
     const amortizado=getDA('Valor Amortizado','valor_amortizado');
     const diasAd=getDA('Dias adicionados','dias_adicionados');
+    const justifModalidad=getDA('Justificacion Modalidad de Contratacion','justificacion_modalidad_de');
+    const esConvenio=tipoContrato.toUpperCase().includes('CONVENIO')||justifModalidad.toUpperCase().includes('INTERADMINISTRATIV');
+    const estadoNum=mapear(estadoC,ESTADO_MAP)||'1';
 
     // Debug recursos en primera fila
     if(i===0) log(`Muestra recursos fila 1 — SGP:${sgp||'0'} Propios:${propios||'0'} PGN:${pgn||'0'}`,'warn');
 
     let ft=normFecha(fechaFin);if(!ft)ft='1900-01-01';
-    let fl=normFecha(fechaLiq);if(!fl)fl='1800-01-01';
+    // SECOP solo trae la fecha LÍMITE para liquidar, no la del acta: se usa únicamente si el contrato ya está liquidado
+    let fl=estadoNum==='3'?normFecha(fechaLiq):'';if(!fl)fl='1800-01-01';
     const sectorial=r('SECTORIAL').toUpperCase();
     const sectorNum=mapear(sectorial,SECTOR_MAP)||'';
     if(sectorNum)sectorCount[sectorNum]=(sectorCount[sectorNum]||0)+1;
@@ -699,8 +778,8 @@ async function procesar() {
       tipoContrato,
       modalidad:mapear(modalidad,MODALIDAD_MAP)||'13',
       interventoria:'0',
-      esConvenioInterAdministrativo:tipoContrato.toUpperCase().includes('CONVENIO')?'SI':'NO',
-      numeroContratoInternoConvenio:tipoContrato.toUpperCase().includes('CONVENIO')?r('N° PROCESO DE CONTRATACIÓN'):'0',
+      esConvenioInterAdministrativo:esConvenio?'SI':'NO',
+      numeroContratoInternoConvenio:esConvenio?(r('N° PROCESO DE CONTRATACIÓN')||'0'):'0',
       ordenEntidadContratista:'4',
       proyectos:r('NUMERO CODIGO BPIN')||'0',
       sectorContrato:sectorNum,
@@ -715,14 +794,14 @@ async function procesar() {
       fechaInicioContrato:fechaInicio,
       plazoContrato:plazoADias(duracion),
       numeroAdiciones:r('ADICION VALOR')||'0',
-      valorTotalAdiciones:diasAd||'0',
+      valorTotalAdiciones:'0', // antes ponía los DÍAS adicionados de SECOP (no es plata); SECOP no trae el valor de las adiciones
       numeroProrrogas:r('PRORROGA')||'0',
       tiempoProrrogas:r('TIEMPO DE EJECUCION TOTAL')||'0',
       numeroSuspenciones:'0',
       tiempoSuspenciones:'0',
       fechaTerminaContrato:ft,
       fechaActaLiquidacion:fl,
-      estadoContrato:mapear(estadoC,ESTADO_MAP)||'1',
+      estadoContrato:estadoNum,
       compromisos:r('No CDP')||'0',
       valorTotalSGP:sgp||'0',
       valorTotalSGR:sgr||'0',
@@ -734,7 +813,8 @@ async function procesar() {
     };
     fila._esNuevo=esNuevo;
     fila._tieneCruce=Object.keys(req).length>0;
-    fila._requiereAtencion=!fila.sectorContrato||!fila.idContrato||!fila.fechaInicioContrato||!fila.fechaFirmaContrato;
+    fila._cruceDudoso=cruceDudoso;
+    fila._requiereAtencion=!fila.sectorContrato||!fila.idContrato||!fila.fechaInicioContrato||!fila.fechaFirmaContrato||cruceDudoso||!mapear(tipoDoc,TIPO_DOC_MAP);
     if(!fila.sectorContrato||!fila.idContrato)filasManual++;
     const tieneVacio=Object.entries(fila).filter(([k])=>!k.startsWith('_')).some(([k,v])=>!v&&k!=='lineaProyecto'&&k!=='observaciones'&&k!=='fechaPagoAnticipo');
     if(tieneVacio)filasVacias++;
@@ -742,6 +822,8 @@ async function procesar() {
   }
 
   reporteCompleto=resultado;
+  reporteCompleto.forEach((r,i)=>r._id=i); // identificador fijo de la fila, para editar celdas
+  _mesReporte=mesFiltro?`${_acumulado?'ACUMULADO':'MES'}_${anioFiltro}-${String(mesFiltro).padStart(2,'0')}`:'';
   reporteNuevos=resultado.filter(r=>r._esNuevo);
   reporteAtencion=resultado.filter(r=>r._requiereAtencion);
 
@@ -777,6 +859,7 @@ async function procesar() {
   } else {
     log('✓ Todos los contratos cruzaron con el Requerimiento','ok');
   }
+  if(crucesDudosos>0)log(`⚠ ${crucesDudosos} de esos son de contratistas con varias filas en el Requerimiento sin ID SECOP — no se adivinó cuál es; escribe el ID SECOP en el Sheet o complétalos a mano`,'warn');
 
   setProgress(98,'Validando...');await tick();
   mostrarValidacion(validarCSV(resultado));
@@ -797,6 +880,11 @@ async function procesar() {
   document.getElementById('step4').classList.add('active');
   document.getElementById('results').style.display='block';
   document.getElementById('btn-process').disabled=false;
+  // Dejar la tabla limpia: sin búsqueda, sin orden y en la pestaña que se está mostrando
+  tabActual=tipoReporte==='nuevos'?'nuevos':'todos';
+  _mostrarTodos=false;sortCol=null;
+  document.getElementById('table-search').value='';
+  marcarTab(tabActual);
   renderTabla(tipoReporte==='nuevos'?reporteNuevos:resultado);
   document.getElementById('results').scrollIntoView({behavior:'smooth'});
 }
@@ -830,15 +918,20 @@ function getTabData(t){
   if(t==='modificados')return mod;
   return reporteAtencion;
 }
-function switchTab(t){
-  tabActual=t;
+function marcarTab(t){
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
-  const el=document.getElementById('tab-'+t);if(el)el.classList.add('active');
+  const el=document.getElementById({nuevos:'tab-nv',modificados:'tab-mod'}[t]||'tab-'+t);if(el)el.classList.add('active');
+}
+function switchTab(t){
+  tabActual=t;_mostrarTodos=false;
+  marcarTab(t);
   document.getElementById('table-search').value='';
   renderTabla(getTabData(t));
 }
+function mostrarTodos(){_mostrarTodos=true;filtrarTabla();}
 function filtrarTabla(){
   const q=document.getElementById('table-search').value.toLowerCase();
+  if(q)_mostrarTodos=false;
   const base=getTabData(tabActual);
   renderTabla(q?base.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().includes(q))):base,!!q);
 }
@@ -856,24 +949,29 @@ function renderTabla(data,filtered=false){
   const allCols=Object.keys(data[0]).filter(k=>!k.startsWith('_'));
   const cols=[...COLS_PRIORITY.filter(c=>allCols.includes(c)),...allCols.filter(c=>!COLS_PRIORITY.includes(c))];
   document.getElementById('preview-head').innerHTML='<tr>'+cols.map(c=>`<th onclick="sortBy('${c}')">${c}${sortCol===c?(sortAsc?' ↑':' ↓'):''}</th>`).join('')+'</tr>';
-  document.getElementById('preview-body').innerHTML=data.slice(0,300).map((row,ri)=>
-    `<tr class="${row._esNuevo?'nuevo-row':''}">`+cols.map(col=>{
+  const filas=_mostrarTodos?data:data.slice(0,300);
+  const btnAll=document.getElementById('btn-show-all');
+  if(data.length>300&&!_mostrarTodos){btnAll.style.display='block';btnAll.textContent=`Ver todos los ${data.length} registros`;}
+  else{btnAll.style.display='none';}
+  document.getElementById('preview-body').innerHTML=filas.map(row=>
+    `<tr class="${row._esNuevo?'nuevo-row':''}" data-id="${row._id}">`+cols.map(col=>{
       const v=row[col];
       const isManual=col==='lineaProyecto'||col==='observaciones';
       const isEmpty=!v&&col!=='lineaProyecto'&&col!=='observaciones'&&col!=='fechaPagoAnticipo';
       const cls=isEmpty?'empty':isManual?'manual':'ok';
       const display=isManual?'AGREGAR MANUALMENTE':(v||'—');
       const ed=(isManual||isEmpty)?'contenteditable="true"':'';
-      return`<td class="${cls}" title="${String(v||'')}" ${ed} onblur="editarCelda(this,${ri},'${col}')">${display}</td>`;
+      return`<td class="${cls}" title="${String(v||'')}" ${ed} onblur="editarCelda(this,'${col}')">${display}</td>`;
     }).join('')+'</tr>'
   ).join('');
-  document.getElementById('preview-count').textContent=`${data.length} registros${data.length>300?' (mostrando 300)':''}${filtered?' — filtrados':''}`;
+  document.getElementById('preview-count').textContent=`${data.length} registros${data.length>300&&!_mostrarTodos?' (mostrando 300)':''}${filtered?' — filtrados':''}`;
 }
-function editarCelda(el,ri,col){
+function editarCelda(el,col){
   const val=el.textContent.trim();
   if(val==='AGREGAR MANUALMENTE'||val==='—')return;
-  const base=tabActual==='todos'?reporteCompleto:tabActual==='nuevos'?reporteNuevos:reporteAtencion;
-  if(base[ri]){base[ri][col]=val;el.className=val?'ok':'empty';el.removeAttribute('contenteditable');}
+  // La fila se busca por su identificador, no por la posición en pantalla (que cambia al buscar u ordenar)
+  const fila=reporteCompleto[parseInt(el.closest('tr').dataset.id)];
+  if(fila){fila[col]=val;el.className=val?'ok':'empty';el.removeAttribute('contenteditable');}
 }
 function limpiarParaCSV(fila){
   const out={};
@@ -891,11 +989,64 @@ function descargarCSV(tipo){
   const cols=Object.keys(data[0]).filter(k=>!k.startsWith('_'));
   const csv=[cols.join('|'),...data.map(f=>{const l=limpiarParaCSV(f);return cols.map(c=>l[c]||'').join('|');})].join('\n');
   const entidad=document.getElementById('cfg-entidad').value||'CONTRATACION';
-  const fecha=new Date().toISOString().slice(0,10).replace(/-/g,'');
+  const hoy=new Date(); // fecha local (no UTC) para que el nombre no se corra un día en la noche
+  const fecha=`${hoy.getFullYear()}${String(hoy.getMonth()+1).padStart(2,'0')}${String(hoy.getDate()).padStart(2,'0')}`;
   const suf=tipo==='nuevos'?'_NUEVOS':tipo==='atencion'?'_ATENCION':'';
+  const mes=_mesReporte?`_${_mesReporte}`:''; // el nombre dice el periodo: MES_2026-09 o ACUMULADO_2026-09
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/plain;charset=utf-8'}));
-  a.download=`${entidad}${suf}_${fecha}.csv`;a.click();
+  a.download=`${entidad}${suf}${mes}_${fecha}.csv`;a.click();
+}
+
+// ─── Reporte en un clic ───────────────────────────────────
+// Hace solo lo mismo que: Conectar Sheet → "Por mes" → elegir mes → Generar → CSV completo.
+// En modo acumulado toma desde enero hasta el mes elegido (así se sube a APPUI).
+async function reporteMesUnClic(){
+  if(_unClicEnCurso)return;
+  document.getElementById('info-unclic').style.color='';
+  const m=(document.getElementById('unclic-mes').value||'').match(/^(\d{4})-(\d{2})$/);
+  if(!m){setSourceInfo('unclic','Elige el mes del reporte.','err');return;}
+  if(!document.getElementById('sheets-url').value.trim()){
+    setSourceInfo('unclic','Falta el link del Google Sheet. Pégalo arriba una sola vez; queda guardado.','err');return;
+  }
+  const anio=m[1], mesNum=parseInt(m[2]);
+  const acum=document.getElementById('unclic-modo').value==='acumulado';
+  const periodo=acum?`enero a ${m[2]}/${anio}`:`${m[2]}/${anio}`;
+  const btn=document.getElementById('btn-unclic');
+  _unClicEnCurso=true;btn.disabled=true;btn.textContent='⏳ Generando...';
+  setSourceInfo('unclic','');
+  try{
+    _acumulado=acum;
+    setTipo('mes');
+    asegurarAnio(anio);
+    document.getElementById('sel-mes').value=String(mesNum);
+    document.getElementById('sel-anio').value=anio;
+    // Releer el Sheet para no trabajar con una copia vieja
+    sheetsData=null;
+    await conectarSheets(true);
+    if(!sheetsData)throw new Error('No se pudo leer el Google Sheet. Revisa el link de arriba.');
+    const cab=sheetsData[0];
+    if(!cab.includes('IDENTIFICACION')&&!cab.includes('ID DEL CONTRATO SECOP'))
+      throw new Error('El Google Sheet no trae las columnas IDENTIFICACION ni ID DEL CONTRATO SECOP. Revisa que el link sea de la hoja BASE DE # AUTO.');
+    reporteCompleto=[];
+    await procesar();
+    if(_errorProceso)throw new Error('No se pudo descargar de SECOP II: '+_errorProceso);
+    if(!reporteCompleto.length)throw new Error(`No hay contratos firmados o iniciados en ${periodo}.`);
+    const sinCruce=reporteCompleto.filter(r=>!r._tieneCruce).length;
+    if(sinCruce===reporteCompleto.length)
+      throw new Error(`Ninguno de los ${reporteCompleto.length} contratos cruzó con el Google Sheet, así que no se descargó. Revisa el Sheet; el detalle está abajo.`);
+    descargarCSV('completo');
+    setSourceInfo('unclic',
+      `✓ Descargado: ${reporteCompleto.length} contratos de ${periodo}`+
+      (reporteAtencion.length?` · ${reporteAtencion.length} requieren atención (míralos abajo antes de subir a APPUI)`:' · todo completo'),'ok');
+    if(reporteAtencion.length)document.getElementById('info-unclic').style.color='var(--yellow)';
+  }catch(err){
+    setSourceInfo('unclic','✗ '+err.message,'err');
+    checkReady();
+  }finally{
+    _acumulado=false; // el botón "Por mes" de siempre sigue siendo de un solo mes
+    _unClicEnCurso=false;btn.disabled=false;btn.textContent='⚡ Generar y descargar';
+  }
 }
 function descargarExcel(){
   if(!reporteCompleto.length){alert('Primero genera el reporte.');return;}
