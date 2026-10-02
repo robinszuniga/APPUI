@@ -152,7 +152,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
 <div class="header">
   <div class="header-icon">📋</div>
   <div><h1>APPUI Procesador</h1><span>Gobernación de La Guajira — DIARI / Contraloría General</span></div>
-  <div class="badge">v5.7 · 2026</div>
+  <div class="badge">v5.8 · 2026</div>
 </div>
 
 <div class="main">
@@ -747,6 +747,24 @@ function textoADias(val){
   if(!d&&/^\s*\d+\s*$/.test(s))d=parseInt(s);
   return d;
 }
+// Clave para comparar números de proceso: "CD OPS 001-2026." = "CD OPS 1 - 2026" = "cd ops 1 de 2026 (Presentación de oferta)"
+function claveProceso(val){
+  const t=String(val||'').toUpperCase().normalize('NFD').replace(/[^\x00-\x7F]/g,'').replace(/\(.*?\)/g,' ').match(/[A-Z]+|\d+/g)||[];
+  return t.filter((x,i)=>!(x==='DE'&&/^20\d\d$/.test(t[i+1]||''))).map(x=>/^\d+$/.test(x)?String(parseInt(x)):x).join('-');
+}
+// Pregunta a SECOP (datos abiertos de procesos) el número de proceso de cada "proceso de compra" (CO1.BDOS...)
+async function referenciasProceso(idsPortafolio){
+  const ids=[...new Set(idsPortafolio.filter(x=>/^CO1\.BDOS\.\d+$/.test(x||'')))];
+  const ref={};
+  for(let i=0;i<ids.length;i+=80){
+    const where=`id_del_portafolio in (${ids.slice(i,i+80).map(x=>`'${x}'`).join(',')})`;
+    const resp=await fetch(`https://www.datos.gov.co/resource/p6dx-8zbt.json?$select=id_del_portafolio,referencia_del_proceso&$where=${encodeURIComponent(where)}&$limit=5000`);
+    if(!resp.ok)throw new Error(`HTTP ${resp.status}`);
+    // Un proceso puede salir varias veces (una por fase); se deja la referencia más corta, sin el "(Presentación de oferta)"
+    (await resp.json()).forEach(p=>{const r=clean(p.referencia_del_proceso);if(r&&(!ref[p.id_del_portafolio]||r.length<ref[p.id_del_portafolio].length))ref[p.id_del_portafolio]=r;});
+  }
+  return ref;
+}
 // ¿La fecha del Sheet (día/mes/año, o mes/día/año en algunas filas) es la misma que la de SECOP (AAAA-MM-DD)?
 function fechaCoincide(txt,iso){
   if(!iso)return false;
@@ -805,7 +823,8 @@ async function procesar() {
   // reqSecop: fila del Sheet por ID SECOP (único por contrato).
   // reqNitLibres: filas del contratista que todavía NO tienen ID SECOP (las que sí lo tienen son de otro contrato).
   // reqNitFilas: todas las filas del contratista con el ID SECOP que traen escrito (para rescatar por fecha de firma).
-  const reqSecop={}, reqNitLibres={}, reqNitFilas={}, secopRiesgo=new Set();
+  // reqProceso: filas por número de proceso ("N° PROCESO DE CONTRATACIÓN"), para cruzar con el número de proceso de SECOP.
+  const reqSecop={}, reqNitLibres={}, reqNitFilas={}, reqProceso={}, secopRiesgo=new Set();
   for(const row of reqObjs){
     const nit=clean(row['IDENTIFICACION']).replace(/[^0-9]/g,'');
     const secopTxt=clean(row['ID DEL CONTRATO SECOP']).toUpperCase();
@@ -818,6 +837,8 @@ async function procesar() {
       if(secop&&!reqSecop[secop])reqSecop[secop]=row;
       if(nit&&!idSecop)(reqNitLibres[nit]=reqNitLibres[nit]||[]).push(row);
       if(nit)(reqNitFilas[nit]=reqNitFilas[nit]||[]).push({row,id:idSecop?idSecop[0]:''});
+      const kp=claveProceso(row['N° PROCESO DE CONTRATACIÓN']);
+      if(/\d/.test(kp))(reqProceso[kp]=reqProceso[kp]||[]).push({row,id:idSecop?idSecop[0]:''});
     }
   }
   log(`Requerimiento: ${reqObjs.length} registros · ${secopRiesgo.size} de riesgo excluidos`,'ok');
@@ -840,11 +861,15 @@ async function procesar() {
   // La API Socrata devuelve los campos en snake_case
   // nit_entidad, id_contrato, nombre_entidad, proveedor_adjudicado, etc.
   // Hacer helper que busca tanto snake_case como el nombre original del Excel
-  let excluidos=0;
+  let excluidos=0, excluidosPorSecop=0;
   const enMes=f=>{if(!f)return false;const p=f.split('-'),mm=parseInt(p[1]);return mm>=mesDesde&&mm<=mesFiltro&&parseInt(p[0])===anioFiltro;}; // f = YYYY-MM-DD
   const daFiltrado=daRows.filter(row=>{
     const secop=clean(row['id_contrato']||row['ID Contrato']||'').toUpperCase();
     if(secopRiesgo.has(secop)){excluidos++;return false;}
+    // También por el supervisor que trae SECOP (palabra completa), para no depender de que el Sheet tenga el ID
+    const supSecop=clean(row['nombre_supervisor']||row['Nombre Supervisor']||'').toUpperCase();
+    const palabrasSup=supSecop.split(/[^A-ZÁÉÍÓÚÜÑ]+/);
+    if(supExcluir.some(kw=>kw.includes(' ')?supSecop.includes(kw):palabrasSup.includes(kw))){excluidos++;excluidosPorSecop++;return false;}
     if(mesFiltro){
       // Es del mes si se firmó O inició en ese mes (los recién firmados aún no tienen fecha de inicio)
       const fi=normFecha(row['fecha_de_inicio_del_contrato']||row['Fecha de Inicio del Contrato']||'');
@@ -856,6 +881,7 @@ async function procesar() {
   });
   if(mesFiltro) log(`Filtro: ${mesDesde<mesFiltro?mesDesde+' a ':''}${mesFiltro}/${anioFiltro} → ${daFiltrado.length} contratos`,'ok');
   log(`DA filtrado: ${daFiltrado.length} contratos (${excluidos} excluidos)`,'ok');
+  if(excluidosPorSecop>0)log(`De los excluidos por riesgo, ${excluidosPorSecop} se detectaron por el supervisor que aparece en SECOP (en el Sheet no tenían ID SECOP)`,'warn');
 
   const resultado=[];
   const sectorCount={};
@@ -863,6 +889,14 @@ async function procesar() {
   // Para rescatar contratos cuyo ID SECOP en el Sheet es otro (el del borrador, o mal digitado)
   const idsDescarga=new Set(daRows.map(x=>clean(x['id_contrato']||x['ID Contrato']||'').toUpperCase()));
   const filasRescate=new Set(), rescatados=[];
+  // Tercer intento de cruce: el número del proceso en SECOP (ej. "SASI-006-2026") contra el del Sheet.
+  // Solo se consulta para los contratos cuyo ID no está en el Sheet.
+  let refProceso={};
+  const sinIdEnSheet=daFiltrado.filter(x=>!reqSecop[clean(x['id_contrato']||x['ID Contrato']||'').toUpperCase()]);
+  if(sinIdEnSheet.length){
+    try{refProceso=await referenciasProceso(sinIdEnSheet.map(x=>clean(x['proceso_de_compra'])));}
+    catch(err){log('⚠ No se pudo consultar el número de proceso en SECOP ('+err.message+'); esos contratos se cruzan solo por ID y por documento','warn');}
+  }
   const numRec=v=>{const n=parseFloat(String(v||'').replace(/[^0-9.]/g,''));return isNaN(n)?0:n;};
 
   for(let i=0;i<daFiltrado.length;i++){
@@ -889,6 +923,16 @@ async function procesar() {
       if(porFecha.length===1){
         req=porFecha[0].row;filasRescate.add(req);
         if(porFecha[0].id){cruceRescatado=true;rescatados.push(`${clean(req['No CONTRATO INTERNO'])||'(sin número)'}: dice ${porFecha[0].id}, es ${secopUp}`);}
+      }
+    }
+    if(!req){
+      // Por número de proceso: sirve cuando la fila del Sheet no tiene contratista ni ID (se quedó en la etapa del proceso)
+      const refSecop=refProceso[clean(row['proceso_de_compra'])]||'';
+      const kp=claveProceso(refSecop);
+      const porProceso=/\d/.test(kp)?(reqProceso[kp]||[]).filter(f=>!idsDescarga.has(f.id)&&!filasRescate.has(f.row)):[];
+      if(porProceso.length===1){
+        req=porProceso[0].row;filasRescate.add(req);cruceRescatado=true;
+        rescatados.push(`${clean(req['No CONTRATO INTERNO'])||'(sin número interno)'} · proceso ${clean(req['N° PROCESO DE CONTRATACIÓN'])}: `+(porProceso[0].id?`dice ${porProceso[0].id}, es ${secopUp}`:`le falta el ID SECOP ${secopUp}`));
       }
     }
     if(!req){
@@ -1042,7 +1086,7 @@ async function procesar() {
   }
   if(crucesDudosos>0)log(`⚠ ${crucesDudosos} de esos son de contratistas con varias filas en el Requerimiento sin ID SECOP — no se adivinó cuál es; escribe el ID SECOP en el Sheet o complétalos a mano`,'warn');
   if(rescatados.length>0){
-    log(`⚠ ${rescatados.length} contratos cruzaron por documento y fecha de firma porque el ID SECOP del Sheet es otro. Revísalos en "Requieren atención" y corrige el ID en el Sheet:`,'warn');
+    log(`⚠ ${rescatados.length} contratos cruzaron por documento y fecha de firma, o por número de proceso, porque el ID SECOP del Sheet es otro o falta. Revísalos en "Requieren atención" y corrige el Sheet:`,'warn');
     rescatados.slice(0,25).forEach(t=>log('   '+t,'warn'));
     if(rescatados.length>25)log(`   ...y ${rescatados.length-25} más`,'warn');
   }
