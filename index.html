@@ -152,7 +152,7 @@ td[contenteditable="true"]:focus{outline:1px solid var(--accent);background:rgba
 <div class="header">
   <div class="header-icon">📋</div>
   <div><h1>APPUI Procesador</h1><span>Gobernación de La Guajira — DIARI / Contraloría General</span></div>
-  <div class="badge">v5.6 · 2026</div>
+  <div class="badge">v5.7 · 2026</div>
 </div>
 
 <div class="main">
@@ -747,6 +747,14 @@ function textoADias(val){
   if(!d&&/^\s*\d+\s*$/.test(s))d=parseInt(s);
   return d;
 }
+// ¿La fecha del Sheet (día/mes/año, o mes/día/año en algunas filas) es la misma que la de SECOP (AAAA-MM-DD)?
+function fechaCoincide(txt,iso){
+  if(!iso)return false;
+  const m=String(txt||'').trim().match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if(!m)return normFecha(txt)===iso;
+  const a=m[1].padStart(2,'0'), b=m[2].padStart(2,'0');
+  return iso===`${m[3]}-${b}-${a}`||iso===`${m[3]}-${a}-${b}`;
+}
 // "N/A", "NO APLICA" o vacío → '' (para que quede el 0 que pide APPUI)
 function sinNoAplica(val){const s=String(val||'').trim();return /^(n\s*\/?\s*a|no\s+aplica|ningun[oa]?|-+)$/i.test(s)?'':s;}
 // Deja solo los códigos BPIN (10 o más dígitos), separados por coma y sin espacios; si no hay, 0
@@ -796,7 +804,8 @@ async function procesar() {
   const reqObjs = sheetsToObjects(sheetsData);
   // reqSecop: fila del Sheet por ID SECOP (único por contrato).
   // reqNitLibres: filas del contratista que todavía NO tienen ID SECOP (las que sí lo tienen son de otro contrato).
-  const reqSecop={}, reqNitLibres={}, secopRiesgo=new Set();
+  // reqNitFilas: todas las filas del contratista con el ID SECOP que traen escrito (para rescatar por fecha de firma).
+  const reqSecop={}, reqNitLibres={}, reqNitFilas={}, secopRiesgo=new Set();
   for(const row of reqObjs){
     const nit=clean(row['IDENTIFICACION']).replace(/[^0-9]/g,'');
     const secopTxt=clean(row['ID DEL CONTRATO SECOP']).toUpperCase();
@@ -808,6 +817,7 @@ async function procesar() {
     else{
       if(secop&&!reqSecop[secop])reqSecop[secop]=row;
       if(nit&&!idSecop)(reqNitLibres[nit]=reqNitLibres[nit]||[]).push(row);
+      if(nit)(reqNitFilas[nit]=reqNitFilas[nit]||[]).push({row,id:idSecop?idSecop[0]:''});
     }
   }
   log(`Requerimiento: ${reqObjs.length} registros · ${secopRiesgo.size} de riesgo excluidos`,'ok');
@@ -850,6 +860,9 @@ async function procesar() {
   const resultado=[];
   const sectorCount={};
   let filasManual=0,filasVacias=0,crucesDudosos=0;
+  // Para rescatar contratos cuyo ID SECOP en el Sheet es otro (el del borrador, o mal digitado)
+  const idsDescarga=new Set(daRows.map(x=>clean(x['id_contrato']||x['ID Contrato']||'').toUpperCase()));
+  const filasRescate=new Set(), rescatados=[];
   const numRec=v=>{const n=parseFloat(String(v||'').replace(/[^0-9.]/g,''));return isNaN(n)?0:n;};
 
   for(let i=0;i<daFiltrado.length;i++){
@@ -867,10 +880,20 @@ async function procesar() {
     const nitUp=nit.toUpperCase(), secopUp=secop.toUpperCase();
     // Cruce con el Sheet: primero por ID SECOP. Por documento solo si el contratista
     // tiene UNA fila sin ID SECOP; si tiene varias no se adivina (queda para revisión).
-    let req=reqSecop[secopUp], cruceDudoso=false;
+    let req=reqSecop[secopUp], cruceDudoso=false, cruceRescatado=false;
     if(!req){
-      const libres=reqNitLibres[nitUp]||[];
-      if(libres.length===1)req=libres[0];
+      // El ID del Sheet no coincide: se busca la fila del mismo contratista firmada el mismo día,
+      // siempre que esa fila no sea de otro contrato de este reporte. Si su ID era otro, queda para revisar.
+      const firmaSecop=normFecha(row['Fecha de Firma']||row['fecha_de_firma']||'');
+      const porFecha=(reqNitFilas[nitUp]||[]).filter(f=>!idsDescarga.has(f.id)&&!filasRescate.has(f.row)&&fechaCoincide(f.row['FECHA SUSCRIPCION CONTRATO'],firmaSecop));
+      if(porFecha.length===1){
+        req=porFecha[0].row;filasRescate.add(req);
+        if(porFecha[0].id){cruceRescatado=true;rescatados.push(`${clean(req['No CONTRATO INTERNO'])||'(sin número)'}: dice ${porFecha[0].id}, es ${secopUp}`);}
+      }
+    }
+    if(!req){
+      const libres=(reqNitLibres[nitUp]||[]).filter(x=>!filasRescate.has(x)); // sin las que ya se usaron para otro contrato
+      if(libres.length===1){req=libres[0];filasRescate.add(req);}
       else if(libres.length>1){cruceDudoso=true;crucesDudosos++;}
     }
     req=req||{};
@@ -966,7 +989,8 @@ async function procesar() {
     fila._esNuevo=esNuevo;
     fila._tieneCruce=Object.keys(req).length>0;
     fila._cruceDudoso=cruceDudoso;
-    fila._requiereAtencion=!fila.sectorContrato||!fila.idContrato||!fila.fechaInicioContrato||!fila.fechaFirmaContrato||cruceDudoso||!mapear(tipoDoc,TIPO_DOC_MAP)
+    fila._cruceRescatado=cruceRescatado;
+    fila._requiereAtencion=!fila.sectorContrato||!fila.idContrato||!fila.fechaInicioContrato||!fila.fechaFirmaContrato||cruceDudoso||cruceRescatado||!mapear(tipoDoc,TIPO_DOC_MAP)
       ||(!!prorrogaTxt&&!prorrogaDias)||(hayAdicion&&!adicValor); // prórroga o adición que no se pudo leer
     if(!fila.sectorContrato||!fila.idContrato)filasManual++;
     const tieneVacio=Object.entries(fila).filter(([k])=>!k.startsWith('_')).some(([k,v])=>!v&&k!=='lineaProyecto'&&k!=='observaciones'&&k!=='fechaPagoAnticipo');
@@ -1017,6 +1041,11 @@ async function procesar() {
     log('✓ Todos los contratos cruzaron con el Requerimiento','ok');
   }
   if(crucesDudosos>0)log(`⚠ ${crucesDudosos} de esos son de contratistas con varias filas en el Requerimiento sin ID SECOP — no se adivinó cuál es; escribe el ID SECOP en el Sheet o complétalos a mano`,'warn');
+  if(rescatados.length>0){
+    log(`⚠ ${rescatados.length} contratos cruzaron por documento y fecha de firma porque el ID SECOP del Sheet es otro. Revísalos en "Requieren atención" y corrige el ID en el Sheet:`,'warn');
+    rescatados.slice(0,25).forEach(t=>log('   '+t,'warn'));
+    if(rescatados.length>25)log(`   ...y ${rescatados.length-25} más`,'warn');
+  }
 
   setProgress(98,'Validando...');await tick();
   mostrarValidacion(validarCSV(resultado));
